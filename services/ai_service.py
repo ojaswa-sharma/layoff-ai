@@ -175,11 +175,11 @@ async def summarie_diff(openai:AsyncOpenAI, diff_text, name, mail, repo_name, co
         text_format=CommitDetails,
     )
     return {
-        "commit_summmary" : resp.commit_summary,
-        "work_category" : resp.work_category.value(),
-        "department" : resp.department.value(),
-        "commiters_performance" : resp.commiters_performance,
-        "work_type" : resp.work_type.value()
+        "commit_summmary" : resp.output_parsed.commit_summary,
+        "work_category" : resp.output_parsed.work_category.value(),
+        "department" : resp.output_parsed.department.value(),
+        "commiters_performance" : resp.output_parsed.commiters_performance,
+        "work_type" : resp.output_parsed.work_type.value()
     }
 
 async def summarize_and_upload(diff_text, name, mail, repo_name, commit_title, db):
