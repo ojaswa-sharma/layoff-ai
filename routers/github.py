@@ -31,7 +31,7 @@ async def webhook_github(request: Request):
     api_compare_url = convert_compare_url_to_api(compare_url)
     
     diff_text = await fetch_diff_from_webhook(api_compare_url, installation_id, app_id, pem_data)
-    
+    print(diff_text)
     for commit in request_data["commits"]:
         commit_hash = commit["id"][:12]
         commit_model = Commit(
