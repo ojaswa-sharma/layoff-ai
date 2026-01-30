@@ -6,7 +6,6 @@ from dotenv import load_dotenv
 
 
 
-app = FastAPI()
 
 def startup_():
     init_mongo()
@@ -18,6 +17,8 @@ async def lifespan(app : FastAPI):
     print(f"[LIFESPAN] Event complete")
     yield
     print(f"[LIFESPAN] Ending")
+
+app = FastAPI(lifespan=lifespan)
 
 for _router in _all:
     app.include_router(_router)
