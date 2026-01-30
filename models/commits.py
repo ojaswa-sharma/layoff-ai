@@ -12,3 +12,4 @@ class Commit(BaseModel):
     repository_name: str
     repository_url: str
     diff: Optional[str] = None
+    installation_id : Optional[str] = None
