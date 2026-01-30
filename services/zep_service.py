@@ -161,8 +161,6 @@ class ZepPersonalizer():
             if last_name:
                 data['last_name'] = last_name.split()[0] if last_name.split() else last_name
 
-            # V3 MIGRATION: Use user_summary_instruction instead of fact_rating_instruction
-            data['user_summary_instruction'] = self.user_summary_instruction
 
             await self.zep_conn.user.add(**data)
 
