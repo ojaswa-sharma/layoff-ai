@@ -2,6 +2,8 @@ from openai import AsyncOpenAI
 import os
 from models.commits import CommitDetails
 from services.zep_store import get_personalizer, botMessage
+import asyncio
+
 _client = None
 
 def get_openai():
@@ -193,9 +195,8 @@ async def summarize_and_upload(diff_text, name, mail, repo_name, commit_title, d
     diff = await summarie_diff(get_openai(), diff_text, name, mail, repo_name, commit_title)
     diff["mail"] = mail
     diff["repo_name"] = repo_name
-    db.commit_summary.insert_one(diff)
     zep = get_personalizer()
-    msg = botMessage(role = "norole", content=f"""
+    msg = botMessage(role = "user", content=f"""
         # Commit summary:
             {diff.get("commit_summmary")}
 
@@ -214,5 +215,7 @@ async def summarize_and_upload(diff_text, name, mail, repo_name, commit_title, d
         # Diff:
             {diff_text}
         """)
-    await zep.add_message(user_id = f"user_{mail}", message=msg, thread_id=repo_name, first_name=name)
+    await asyncio.gather(zep.add_message(user_id = f"user_{mail}", message=msg, thread_id=repo_name, first_name=name),
+                         asyncio.to_thread(db.commit_summary.insert_one(diff))
+                         )
 
