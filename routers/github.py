@@ -27,6 +27,8 @@ async def webhook_github(request: Request):
     #         diff=diff_text
     #     )
         # print(commit_model)
+    
+    print("--------------------------------")
     print(request_data)
     
     return {"message": request_data}
