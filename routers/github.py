@@ -28,7 +28,7 @@ async def webhook_github(request: Request):
     #     )
         # print(commit_model)
     
-    print("--------------------------------")
+    print("haha")
     print(request_data)
     
     return {"message": request_data}
