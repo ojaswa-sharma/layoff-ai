@@ -10,4 +10,4 @@ def init_mongo():
 
 def get_mongo_db():
     global mongo_db
-    return mongo_db    
+    yield mongo_db
