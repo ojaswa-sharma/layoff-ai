@@ -7,7 +7,7 @@ from collections import deque
 from dataclasses import dataclass
 
 from zep_cloud.client import AsyncZep
-from zep_cloud.types import Message
+from zep_cloud.types import Message, UserInstruction
 
 @dataclass(frozen=True)
 class botMessage:
@@ -121,7 +121,39 @@ class ZepPersonalizer():
         if not self.loop_running:
             self.loop_running = True
             asyncio.create_task(self.background_task())
-            
+            try:
+                await self.zep_conn.user.add_user_summary_instructions(
+                    instructions=[
+                        UserInstruction(
+                            name="engineering_focus_and_strengths",
+                            text=(
+                                "Extract information about the developer's primary engineering focus, "
+                                "including dominant departments (ui, frontend, backend, devops), "
+                                "types of work they most frequently perform, and areas of technical strength."
+                            ),
+                        ),
+                        UserInstruction(
+                            name="contribution_quality_and_impact",
+                            text=(
+                                "Capture patterns related to the quality and impact of the developer's contributions, "
+                                "including frequency of real vs fake work, delivery of major features, "
+                                "handling of critical bugs, and tendency toward low-impact or cosmetic changes."
+                            ),
+                        ),
+                        UserInstruction(
+                            name="work_style_and_delivery_patterns",
+                            text=(
+                                "Capture the developer's work style and delivery behavior, such as consistency of output, "
+                                "preference for features vs bug fixes vs tech debt, clarity of commits, "
+                                "and recurring contribution patterns over time."
+                            )
+                        )
+                    ]
+                )
+            except Exception as e:
+                print(f"[DEBUG] Error adding user instructions: {e}")
+    
+
 
     async def background_task(self):
         while self.loop_running:
@@ -180,17 +212,11 @@ class ZepPersonalizer():
 
         message_list = []
         for message in messages:
-            text = message.content[0].get('text')
-            try:
-                s = json.loads(text)
-                text = json_to_md(s)
-            except:
-                pass
+            text = message.content[0].get('text') if not isinstance(message, str) else message
             curr = Message(role = str(message.role), content = str(text))
             if message.role == "user":
                 message_list.append(curr)
 
-        # V3 MIGRATION: thread.add_messages instead of memory.add
         if message_list:
             await self.zep_conn.thread.add_messages(thread_id=thread_id, messages=message_list)
 
@@ -200,7 +226,6 @@ class ZepPersonalizer():
         await self.upsert_user(user_id, first_name, last_name)
 
         thread_id = str(thread_id)
-        # V3 MIGRATION: thread.get instead of deprecated session methods
         try:
             thread = await self.zep_conn.thread.get(thread_id)
             print(f'[DEBUG] Thread : {thread}')
@@ -208,10 +233,10 @@ class ZepPersonalizer():
             thread = None
 
         if not thread:
-            # V3 MIGRATION: thread.create instead of memory.add_session
             await self.zep_conn.thread.create(thread_id=thread_id, user_id=user_id)
 
-        text = message.content[0].get('text')
+        # text = message.content[0].get('text')
+        text = message.content
         try:
             s = json.loads(text)
             text = json_to_md(s)
@@ -219,7 +244,6 @@ class ZepPersonalizer():
             pass
         curr = Message(role = str(message.role), content = str(text))
         
-        # V3 MIGRATION: thread.add_messages instead of memory.add
         if message.role in ["user"]:
             await self.zep_conn.thread.add_messages(thread_id=thread_id, messages=[curr])
 
