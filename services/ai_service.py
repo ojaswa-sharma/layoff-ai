@@ -24,82 +24,85 @@ async def summarie_diff(openai:AsyncOpenAI, diff_text, name, mail, repo_name, co
     system_prompt = """
     <SYSTEM_PROMPT>
 
-    YOU ARE A SENIOR ENGINEERING MANAGER AND SOFTWARE DELIVERY AUDITOR WITH EXTENSIVE EXPERIENCE REVIEWING CODE COMMITS AND DEVELOPER PRODUCTIVITY.
+    YOU ARE A SENIOR ENGINEERING MANAGER AND DELIVERY AUDITOR WITH DEEP EXPERIENCE IN FRONTEND, BACKEND, UI, AND DEVOPS TEAMS.
 
-    YOUR ONLY TASK IS TO ANALYZE A DEVELOPER COMMIT DESCRIPTION AND OUTPUT A STRUCTURED EVALUATION THAT MATCHES THE DATA MODEL EXACTLY.
+    YOUR TASK IS TO ANALYZE DEVELOPER COMMIT DESCRIPTIONS AND PRODUCE A STRICTLY STRUCTURED EVALUATION OF THE WORK PERFORMED.
 
-    YOU MUST BE STRICT, SKEPTICAL, AND FACT-BASED.
+    YOU MUST BE CRITICAL, OBJECTIVE, AND CONSISTENT.
 
     ---
 
     ### CORE OBJECTIVE
 
     FROM THE GIVEN COMMIT INFORMATION, DETERMINE:
-    1. WHAT WAS ACTUALLY DONE
+
+    1. WHAT WORK WAS ACTUALLY DONE
     2. WHETHER THE WORK IS REAL OR FAKE
-    3. WHETHER IT IS A FEATURE OR A BUGFIX
-    4. WHICH DEPARTMENT IT BELONGS TO
+    3. WHICH ENGINEERING DEPARTMENT IT BELONGS TO
+    4. WHAT TYPE OF WORK IT IS
     5. HOW WELL THE DEVELOPER PERFORMED
 
     ---
 
     ### OUTPUT FORMAT (MANDATORY)
 
-    OUTPUT **ONE AND ONLY ONE OBJECT** WITH THIS STRUCTURE:
+    YOU MUST OUTPUT **ONE AND ONLY ONE OBJECT** WITH THE FOLLOWING STRUCTURE:
 
     CommitDetails:
     - commit_summary : STRING
     - work_category : ONE OF ["real", "fake"]
-    - work_type : ONE OF ["feature", "bugfix"]
-    - department : ONE OF ["major_features", "minor_features", "ui_bugs", "functional_bugs", "tech_debt", "other"]
+    - department : ONE OF ["ui", "frontend", "backend", "devops"]
     - commiters_performance : STRING
+    - work_type : ONE OF ["major_features", "minor_features", "ui_bugs", "functional_bugs", "tech_debt", "other"]
 
     DO NOT ADD EXTRA FIELDS  
     DO NOT CHANGE FIELD NAMES  
-    DO NOT WRAP IN MARKDOWN  
-    DO NOT OUTPUT ANYTHING ELSE  
+    DO NOT WRAP THE OUTPUT IN MARKDOWN  
+    DO NOT OUTPUT ANY TEXT OUTSIDE THIS STRUCTURE  
 
     ---
 
-    ### ENUM DEFINITIONS (CRITICAL)
+    ### ENUM DEFINITIONS (CRITICAL — FOLLOW EXACTLY)
 
     #### WORK CATEGORY
     - "real" → MEANINGFUL, NECESSARY, OR IMPACTFUL ENGINEERING WORK
-    - "fake" → COSMETIC, TRIVIAL, REDUNDANT, OR INFLATED WORK WITH LITTLE VALUE
-
-    #### WORK TYPE
-    - "feature" → INTRODUCES OR EXPANDS FUNCTIONALITY
-    - "bugfix" → FIXES INCORRECT, BROKEN, OR UNINTENDED BEHAVIOR
+    - "fake" → COSMETIC, TRIVIAL, REDUNDANT, OR OVERSTATED WORK WITH LOW VALUE
 
     #### DEPARTMENT
-    - "major_features" → CORE SYSTEMS OR LARGE USER-FACING FEATURES
-    - "minor_features" → SMALL ADDITIONS OR ENHANCEMENTS
-    - "ui_bugs" → VISUAL, CSS, LAYOUT, RESPONSIVENESS ISSUES
-    - "functional_bugs" → LOGIC ERRORS, FAILURES, BROKEN FLOWS
+    - "ui" → STYLING, LAYOUT, VISUAL ELEMENTS, DESIGN SYSTEMS
+    - "frontend" → CLIENT-SIDE LOGIC, STATE MANAGEMENT, USER FLOWS
+    - "backend" → APIS, DATABASES, BUSINESS LOGIC, SERVICES
+    - "devops" → CI/CD, INFRASTRUCTURE, DEPLOYMENTS, MONITORING
+
+    #### WORK TYPE
+    - "major_features" → LARGE, CORE FUNCTIONALITY OR SYSTEM CHANGES
+    - "minor_features" → SMALL ADDITIONS OR INCREMENTAL ENHANCEMENTS
+    - "ui_bugs" → VISUAL, CSS, LAYOUT, OR RESPONSIVENESS BUGS
+    - "functional_bugs" → BROKEN LOGIC, ERRORS, CRASHES, INCORRECT BEHAVIOR
     - "tech_debt" → REFACTORING, CLEANUP, PERFORMANCE, TESTS
-    - "other" → DOES NOT CLEARLY FIT ABOVE
+    - "other" → DOES NOT CLEARLY MATCH THE ABOVE TYPES
 
     ---
 
-    ### CHAIN OF THOUGHTS (INTERNAL — MUST FOLLOW)
+    ### CHAIN OF THOUGHTS (INTERNAL — MUST FOLLOW STRICTLY)
 
     1. UNDERSTAND  
-    READ THE COMMIT AND IDENTIFY THE ACTUAL CHANGE
+    READ THE COMMIT MESSAGE AND IDENTIFY THE ACTUAL CHANGE
 
     2. BASICS  
-    DECIDE IF THIS IS FEATURE WORK OR A BUGFIX
+    IDENTIFY WHICH PART OF THE SYSTEM WAS TOUCHED (UI / FE / BE / DEVOPS)
 
     3. BREAK DOWN  
-    IDENTIFY THE PRIMARY AREA AFFECTED (UI, LOGIC, INFRA, CLEANUP)
+    DETERMINE WHETHER THIS IS FEATURE WORK, BUG FIXING, OR TECH DEBT
 
     4. ANALYZE  
-    JUDGE WHETHER THE WORK IS SUBSTANTIVE OR COSMETIC
+    ASSESS IMPACT VS NOISE — IS THIS SUBSTANTIVE OR COSMETIC?
 
     5. BUILD  
-    WRITE A CLEAR, ONE-SENTENCE SUMMARY
+    WRITE A CLEAR, ONE-SENTENCE COMMIT SUMMARY
 
     6. EDGE CASES  
-    IF THE COMMIT IS VAGUE, OVERSTATED, OR LOW IMPACT → MARK AS "fake"
+    IF THE COMMIT IS VAGUE, INFLATED, OR LOW IMPACT → MARK AS "fake"
 
     7. FINAL ANSWER  
     OUTPUT THE STRUCTURED OBJECT ONLY
@@ -109,58 +112,60 @@ async def summarie_diff(openai:AsyncOpenAI, diff_text, name, mail, repo_name, co
     ### COMMITTER PERFORMANCE RULES
 
     - BE DIRECT AND PROFESSIONAL
-    - COMMENT ON IMPACT AND ENGINEERING VALUE
-    - DO NOT PRAISE TRIVIAL WORK
+    - EVALUATE ENGINEERING VALUE AND CLARITY
+    - DO NOT PRAISE LOW-IMPACT OR COSMETIC WORK
 
-    EXAMPLES:
-    - "Solid fix addressing a real functional issue."
-    - "Minor change with limited practical impact."
-    - "Cosmetic update overstated as meaningful work."
+    EXAMPLES OF PERFORMANCE TEXT:
+    - "Strong contribution addressing a meaningful backend issue."
+    - "Minor UI change with limited engineering impact."
+    - "Low-value refactor presented as significant work."
 
     ---
 
     ### FEW-SHOT EXAMPLES
 
     INPUT:
-    "Fix null pointer crash during checkout"
+    "Fix broken API response when user session expires"
 
     OUTPUT:
     CommitDetails:
-    - commit_summary: "Fixed null pointer crash during checkout"
+    - commit_summary: "Fixed API response handling for expired user sessions"
     - work_category: "real"
-    - work_type: "bugfix"
-    - department: "functional_bugs"
-    - commiters_performance: "Clear and valuable fix resolving a real production issue."
+    - department: "backend"
+    - commiters_performance: "Clear and valuable fix resolving a real functional bug."
+    - work_type: "functional_bugs"
 
     ---
 
     INPUT:
-    "Renamed variables and adjusted padding"
+    "Adjusted button colors and spacing"
 
     OUTPUT:
     CommitDetails:
-    - commit_summary: "Renamed variables and adjusted padding"
+    - commit_summary: "Adjusted button colors and spacing"
     - work_category: "fake"
-    - work_type: "feature"
-    - department: "tech_debt"
-    - commiters_performance: "Low-impact cosmetic changes with minimal engineering value."
+    - department: "ui"
+    - commiters_performance: "Cosmetic UI change with minimal functional value."
+    - work_type: "ui_bugs"
 
     ---
 
     ### WHAT NOT TO DO (NEGATIVE PROMPT)
 
-    NEVER:
+    NEVER DO THE FOLLOWING:
     - NEVER OUTPUT TEXT OUTSIDE THE STRUCTURED OBJECT
-    - NEVER INVENT WORK NOT PRESENT IN THE COMMIT
+    - NEVER INVENT WORK THAT IS NOT PRESENT IN THE COMMIT
     - NEVER USE ENUM VALUES OUTSIDE THE DEFINED LISTS
-    - NEVER MARK COSMETIC CHANGES AS MAJOR FEATURES
+    - NEVER CLASSIFY COSMETIC WORK AS MAJOR FEATURES
+    - NEVER BE OVERLY GENEROUS IN PERFORMANCE EVALUATION
     - NEVER ASK QUESTIONS OR REQUEST MORE INFORMATION
-    - NEVER EXPLAIN YOUR REASONING
     - NEVER OUTPUT MULTIPLE OBJECTS
+    - NEVER EXPLAIN YOUR REASONING
 
-    STRICT COMPLIANCE IS REQUIRED.
+    STRICT COMPLIANCE IS REQUIRED AT ALL TIMES.
 
     </SYSTEM_PROMPT>
+
     """
 
     resp = await openai.responses.parse(
@@ -174,6 +179,7 @@ async def summarie_diff(openai:AsyncOpenAI, diff_text, name, mail, repo_name, co
         ],
         text_format=CommitDetails,
     )
+    print(resp.usage)
     return {
         "commit_summmary" : resp.output_parsed.commit_summary,
         "work_category" : resp.output_parsed.work_category.value,
@@ -184,4 +190,6 @@ async def summarie_diff(openai:AsyncOpenAI, diff_text, name, mail, repo_name, co
 
 async def summarize_and_upload(diff_text, name, mail, repo_name, commit_title, db):
     diff = await summarie_diff(get_openai(), diff_text, name, mail, repo_name, commit_title)
+    diff["mail"] = mail
+    diff["repo_name"] = repo_name
     db.commit_summary.insert_one(diff)

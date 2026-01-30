@@ -20,16 +20,18 @@ class WorkCategory(Enum):
     fake : str = "fake"
 
 class WorkDepartment(Enum):
+    ui : str = "ui"
+    frontend : str = "frontend"
+    backend : str = "backend"
+    devops : str = "devops"
+
+class WorkType(Enum):
     major_features : str = "major_features"
     minor_features : str = "minor_features"
     ui_bugs : str = "ui_bugs"
     functional_bugs : str = "functional_bugs"
     tech_debt : str = "tech_debt"
     other : str = "other"
-
-class WorkType(Enum):
-    bugfix : str = "bugfix"
-    feature : str = "feature"
 
 class CommitDetails(BaseModel):
     commit_summary : str
