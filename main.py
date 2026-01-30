@@ -4,9 +4,6 @@ from contextlib import asynccontextmanager
 from services.db import init_mongo
 from dotenv import load_dotenv
 
-
-
-
 def startup_():
     init_mongo()
 

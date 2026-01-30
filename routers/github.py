@@ -4,6 +4,8 @@ from typing import List
 from services.git_diff import fetch_diff_from_webhook
 import os
 from services.db import get_mongo_db
+from services.ai_service import summarize_and_upload
+import asyncio
 
 router = APIRouter(prefix="/github")
 
@@ -47,7 +49,15 @@ async def webhook_github(request: Request, mongo=Depends(get_mongo_db)):
         
         if collected:
             mongo.commits.insert_many(collected)
-        
+            asyncio.create_task(summarize_and_upload(diff_text,
+                                                     commit["author"]["name"],
+                                                     commit["author"]["email"],
+                                                     request_data["repository"]["name"],
+                                                     commit["message"],
+                                                     mongo
+                                                     ))
+
+
         return {
             "message": "Webhook processed successfully", 
             "commits_count": len(collected)
