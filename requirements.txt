@@ -6,3 +6,4 @@ aiohttp
 pyjwt
 cryptography
 openai
+zep-cloud
