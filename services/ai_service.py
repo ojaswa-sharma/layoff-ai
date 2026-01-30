@@ -216,6 +216,6 @@ async def summarize_and_upload(diff_text, name, mail, repo_name, commit_title, d
             {diff_text}
         """)
     await asyncio.gather(zep.add_message(user_id = f"user_{mail}", message=msg, thread_id=repo_name, first_name=name),
-                         asyncio.to_thread(db.commit_summary.insert_one(diff))
+                         asyncio.to_thread(db.commit_summary.insert_one,diff)
                          )
 
