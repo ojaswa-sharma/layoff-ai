@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 
 
@@ -11,3 +11,4 @@ class Commit(BaseModel):
     date: datetime
     repository_name: str
     repository_url: str
+    diff: Optional[str] = None
