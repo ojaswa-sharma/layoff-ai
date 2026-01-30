@@ -54,8 +54,11 @@ async def webhook_github(request: Request, mongo=Depends(get_mongo_db)):
         }
         
     except KeyError as e:
+        print(e)
         raise HTTPException(status_code=400, detail=f"Missing required field: {str(e)}")
     except FileNotFoundError:
+        print("DIDNT FIND THE PEMFILE")
         raise HTTPException(status_code=500, detail="PEM file not found")
     except Exception as e:
+        print(e)
         raise HTTPException(status_code=500, detail=f"Error processing webhook: {str(e)}")
