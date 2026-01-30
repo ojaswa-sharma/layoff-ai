@@ -237,14 +237,9 @@ class ZepPersonalizer():
 
         # text = message.content[0].get('text')
         text = message.content
-        try:
-            s = json.loads(text)
-            text = json_to_md(s)
-        except:
-            pass
         curr = Message(role = str(message.role), content = str(text))
         
-        if message.role in ["user"]:
+        if message.role in ["user", "norole"]:
             await self.zep_conn.thread.add_messages(thread_id=thread_id, messages=[curr])
 
         return {"status" : "success"} 
