@@ -13,6 +13,7 @@ async def webhook_github(request: Request):
     request_data = await request.json()
     compare_url = request_data["compare"]
     diff_text = await fetch_git_diff(compare_url)
+    
     for commit in request_data["commits"]:
         commit_hash = commit["id"][:12]
         commit_model = Commit(
