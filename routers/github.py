@@ -14,7 +14,6 @@ def convert_compare_url_to_api(compare_url: str) -> str:
       OUT: https://api.github.com/repos/owner/repo/compare/abc...xyz
     """
     if compare_url.startswith("https://github.com/"):
-        # Remove the github.com prefix and add api.github.com/repos
         path = compare_url.replace("https://github.com/", "")
         return f"https://api.github.com/repos/{path}"
     return compare_url
@@ -29,7 +28,6 @@ async def webhook_github(request: Request):
     with open("isometrik.pem", 'r') as file:
         pem_data = file.read()
     
-    # Convert web URL to API URL
     api_compare_url = convert_compare_url_to_api(compare_url)
     
     diff_text = await fetch_diff_from_webhook(api_compare_url, installation_id, app_id, pem_data)
