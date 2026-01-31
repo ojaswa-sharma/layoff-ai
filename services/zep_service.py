@@ -241,7 +241,8 @@ class ZepPersonalizer():
             "repo_name" : repo_name
         })
 
-        await self.zep_conn.thread.add_messages(thread_id=thread_id, messages=[curr])
+        # await self.zep_conn.thread.add_messages(thread_id=thread_id, messages=[curr])
+        await self.zep_conn.graph.add(user_id=user_id, data = text, type=text, source_description="Data from github summarized by ai")
 
         return {"status" : "success"} 
 
