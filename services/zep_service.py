@@ -148,7 +148,8 @@ class ZepPersonalizer():
                                 "and recurring contribution patterns over time."
                             )
                         )
-                    ]
+                    ],
+                    user_ids=[]
                 )
             except Exception as e:
                 print(f"[DEBUG] Error adding user instructions: {e}")
@@ -183,7 +184,7 @@ class ZepPersonalizer():
                 await asyncio.sleep(1)
 
 
-    async def upsert_user(self, user_id, first_name = None, last_name = None):
+    async def upsert_user(self, user_id, first_name = None, last_name = None, email = None):
         try:
             existing = await self.zep_conn.user.get(user_id = user_id)
         except:
@@ -192,6 +193,8 @@ class ZepPersonalizer():
                 data['first_name'] = first_name.split()[0] if first_name.split() else first_name
             if last_name:
                 data['last_name'] = last_name.split()[0] if last_name.split() else last_name
+            if email:
+                data['email'] = email
 
 
             await self.zep_conn.user.add(**data)
@@ -200,14 +203,12 @@ class ZepPersonalizer():
         await self.upsert_user(user_id, first_name, last_name)
 
         thread_id = str(thread_id)
-        # V3 MIGRATION: thread.get instead of deprecated session methods
         try:
             thread = await self.zep_conn.thread.get(thread_id)
         except:
             thread = None
             
         if not thread:
-            # V3 MIGRATION: thread.create instead of memory.add_session
             await self.zep_conn.thread.create(thread_id=thread_id, user_id=user_id)
 
         message_list = []
@@ -222,8 +223,8 @@ class ZepPersonalizer():
 
         return {"status" : "success"}    
 
-    async def add_message(self, user_id, message, thread_id, first_name = "", last_name = ""):
-        await self.upsert_user(user_id, first_name, last_name)
+    async def add_message(self, user_id, message, thread_id, first_name = "", last_name = "", repo_name = None, email = None):
+        await self.upsert_user(user_id, first_name, last_name, email)
 
         thread_id = str(thread_id)
         try:
@@ -235,10 +236,11 @@ class ZepPersonalizer():
         if not thread:
             await self.zep_conn.thread.create(thread_id=thread_id, user_id=user_id)
 
-        # text = message.content[0].get('text')
         text = message.content
-        curr = Message(role = str(message.role), content = str(text))
-        
+        curr = Message(role = str(message.role), content = str(text), metadata={
+            "repo_name" : repo_name
+        })
+
         await self.zep_conn.thread.add_messages(thread_id=thread_id, messages=[curr])
 
         return {"status" : "success"} 
@@ -250,7 +252,6 @@ class ZepPersonalizer():
             fact_text, fact_type = message.fact, message.fact_type
             print('[DEBUGGGG] STARTED')
             
-            # V3 MIGRATION: graph.add still works the same way for user graphs
             await self.zep_conn.graph.add(
                 data = fact_text[:min(len(fact_text), 9999)],
                 type= fact_type,
@@ -266,16 +267,9 @@ class ZepPersonalizer():
     async def get_context(self, user_id, query = None, top_n = 3):
         await self.check_bg()
         
-        # V3 MIGRATION: Use thread.get_user_context for better context retrieval
-        # This replaces memory.search and provides structured, relevant facts
-        # Note: You'll need a thread_id to use get_user_context
-        # If you don't have a specific thread, use graph.search instead
-        
         if not query:
             query = "tell me about my preferences"
         try:
-            # V3 MIGRATION: graph.search replaces memory.search_sessions
-            # Note: min_score parameter is deprecated, removed from call
             fact_objs = await self.zep_conn.graph.search(
                 query = query, 
                 user_id = user_id, 
@@ -283,13 +277,10 @@ class ZepPersonalizer():
             )
             facts = []
             
-            # V3 MIGRATION: Results still have nodes with score and summary
             for edge in fact_objs.nodes:
                 facts.append((edge.score, edge.summary))      
                 print(f"{edge.score} : {edge.summary}")      
             
-            # Sort by score (descending) and take top N facts
-            # V3 note: You can manually filter by score if needed, but min_score param is gone
             facts.sort(key=lambda x: x[0], reverse=True)
             top_facts = [fact[1] for fact in facts[:top_n]]
             
