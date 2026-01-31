@@ -116,74 +116,6 @@ class ZepPersonalizer():
 
         self.loop_running = False
 
-
-    async def check_bg(self):
-        if not self.loop_running:
-            self.loop_running = True
-            asyncio.create_task(self.background_task())
-            # try:
-            #     await self.zep_conn.user.add_user_summary_instructions(
-            #         instructions=[
-            #             UserInstruction(
-            #                 name="engineering_focus_and_strengths",
-            #                 text=(
-            #                     "Extract information about the developer's primary engineering focus, "
-            #                     "including dominant departments (ui, frontend, backend, devops), "
-            #                     "types of work they most frequently perform, and areas of technical strength."
-            #                 ),
-            #             ),
-            #             UserInstruction(
-            #                 name="contribution_quality_and_impact",
-            #                 text=(
-            #                     "Capture patterns related to the quality and impact of the developer's contributions, "
-            #                     "including frequency of real vs fake work, delivery of major features, "
-            #                     "handling of critical bugs, and tendency toward low-impact or cosmetic changes."
-            #                 ),
-            #             ),
-            #             UserInstruction(
-            #                 name="work_style_and_delivery_patterns",
-            #                 text=(
-            #                     "Capture the developer's work style and delivery behavior, such as consistency of output, "
-            #                     "preference for features vs bug fixes vs tech debt, clarity of commits, "
-            #                     "and recurring contribution patterns over time."
-            #                 )
-            #             )
-            #         ],
-            #         user_ids=[]
-            #     )
-            # except Exception as e:
-            #     print(f"[DEBUG] Error adding user instructions: {e}")
-    
-
-
-    async def background_task(self):
-        while self.loop_running:
-            curr = None
-            async with self.lock:
-                if self.tasks:
-                    curr = self.tasks.popleft()
-                    print(curr)
-            if curr:
-                if curr.data_type == 'message':
-                    try:
-                        user_id, thread_id, message, first_name, last_name = curr.decompose()
-                        await self.add_message(user_id, message, thread_id, first_name, last_name)
-                    except Exception as e:
-                        print(f'[DEBUG] Error while processing task: {e}')
-                    finally:
-                        await asyncio.sleep(0.1)
-                elif curr.data_type == 'fact':
-                    try:
-                        user_id, thread_id, message, first_name, last_name = curr.decompose()
-                        await self.add_fact(user_id, message, first_name, last_name)
-                    except Exception as e:
-                        print(f'[DEBUG] Error while processing fact: {e}')
-                    finally:
-                        await asyncio.sleep(0.1)
-            else:
-                await asyncio.sleep(1)
-
-
     async def upsert_user(self, user_id, first_name = None, last_name = None, email = None):
         try:
             existing = await self.zep_conn.user.get(user_id = user_id)
@@ -199,46 +131,12 @@ class ZepPersonalizer():
 
             await self.zep_conn.user.add(**data)
 
-    async def add_messages(self, user_id, messages, thread_id, first_name = "", last_name = ""):
-        await self.upsert_user(user_id, first_name, last_name)
-
-        thread_id = str(thread_id)
-        try:
-            thread = await self.zep_conn.thread.get(thread_id)
-        except:
-            thread = None
-            
-        if not thread:
-            await self.zep_conn.thread.create(thread_id=thread_id, user_id=user_id)
-
-        message_list = []
-        for message in messages:
-            text = message.content[0].get('text') if not isinstance(message, str) else message
-            curr = Message(role = str(message.role), content = str(text))
-            if message.role == "user":
-                message_list.append(curr)
-
-        if message_list:
-            await self.zep_conn.thread.add_messages(thread_id=thread_id, messages=message_list)
-
-        return {"status" : "success"}    
-
     async def add_message(self, user_id, message, thread_id, first_name = "", last_name = "", repo_name = None, email = None):
         await self.upsert_user(user_id, first_name, last_name, email)
 
         thread_id = str(thread_id)
-        # try:
-        #     thread = await self.zep_conn.thread.get(thread_id)
-        #     print(f'[DEBUG] Thread : {thread}')
-        # except:
-        #     thread = None
-
-        # if not thread:
-        #     await self.zep_conn.thread.create(thread_id=thread_id, user_id=user_id)
-
         text = message.content
-        # await self.zep_conn.thread.add_messages(thread_id=thread_id, messages=[curr])
-        await self.zep_conn.graph.add(user_id=user_id, data = text, type="text", source_description="Data from github summarized by ai")
+        await self.zep_conn.graph.add(user_id=user_id, data = text[:min(len(text), 9999)], type="text", source_description="Data from github summarized by ai")
 
         return {"status" : "success"} 
 
@@ -262,8 +160,6 @@ class ZepPersonalizer():
 
 
     async def get_context(self, user_id, query = None, top_n = 3):
-        await self.check_bg()
-        
         if not query:
             query = "tell me about my preferences"
         try:
@@ -286,46 +182,7 @@ class ZepPersonalizer():
             print(f"[ERROR] Error getting context: {e}")
             return ""
 
-    async def get_context_with_thread(self, user_id, thread_id, query = None):
-        """
-        V3 MIGRATION: New method using thread.get_user_context
-        This is the recommended way to get context in V3 when you have a thread_id
-        Returns structured context with user summary and relevant facts
-        """
-        await self.check_bg()
-        
-        try:
-            # V3 MIGRATION: thread.get_user_context replaces memory.get and provides
-            # structured context (no mode parameter needed)
-            context = await self.zep_conn.thread.get_user_context(
-                thread_id=thread_id,
-                query=query  # Optional query to focus context retrieval
-            )
-            
-            return context
-        except Exception as e:
-            print(f"[ERROR] Error getting thread context: {e}")
-            return None
-
-
-    async def add_task(self, task):
-        await self.check_bg()
-        async with self.lock:
-            self.tasks.append(task)
-
-
     async def get_user_persona(self, user_id):
-        """
-        Get user persona summary from Zep user node.
-        
-        V3 MIGRATION: user.get_node still works the same way
-        
-        Args:
-            user_id (str): The user ID to get persona for
-            
-        Returns:
-            str: The summary field from the user node, or empty string if not found
-        """
         try:
             print(f"[DEBUG] Getting persona for user_id: {user_id}")
             user_node = await self.zep_conn.user.get_node(user_id=user_id)
@@ -344,36 +201,3 @@ class ZepPersonalizer():
             import traceback
             traceback.print_exc()
             return ""
-
-    async def get_user_threads(self, user_id):
-        """
-        V3 MIGRATION: New method to get all threads for a user
-        Replaces user.get_sessions
-        
-        Args:
-            user_id (str): The user ID to get threads for
-            
-        Returns:
-            list: List of thread objects
-        """
-        try:
-            threads = await self.zep_conn.user.get_threads(user_id=user_id)
-            return threads
-        except Exception as e:
-            print(f"[ERROR] Error getting user threads: {e}")
-            return []
-
-    async def delete_thread(self, thread_id):
-        """
-        V3 MIGRATION: New method to delete a thread
-        Replaces memory.delete
-        
-        Args:
-            thread_id (str): The thread ID to delete
-        """
-        try:
-            await self.zep_conn.thread.delete(thread_id=thread_id)
-            return {"status": "success"}
-        except Exception as e:
-            print(f"[ERROR] Error deleting thread: {e}")
-            return {"status": "error", "message": str(e)}
