@@ -147,6 +147,7 @@ STRICT COMPLIANCE IS REQUIRED AT ALL TIMES.
             },
         ],
         text_format=CommitDetails,
+        max_output_tokens=500
     )
     print(resp.usage)
     return {
