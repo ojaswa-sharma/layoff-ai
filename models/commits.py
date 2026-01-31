@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional
 from enum import Enum
 from datetime import datetime
@@ -34,8 +34,30 @@ class WorkType(Enum):
     other : str = "other"
 
 class CommitDetails(BaseModel):
-    commit_summary : str
-    work_category : WorkCategory
-    department : WorkDepartment
-    commiters_performance : str
-    work_type : WorkType
+    commit_summary: str = Field(
+        ...,
+        min_length=300,
+        max_length=900,
+        description=(
+            "A concise but detailed 3–5 sentence paragraph describing what was changed, "
+            "why it was done, and the concrete technical impact. "
+            "Must be factual, specific, and avoid exaggeration or filler."
+        ),
+    )
+
+    work_category: WorkCategory
+
+    department: WorkDepartment
+
+    commiters_performance: str = Field(
+        ...,
+        min_length=400,
+        max_length=1200,
+        description=(
+            "A professional 4–6 sentence performance evaluation assessing technical value, "
+            "execution quality, clarity of intent, and whether the work matches its implied importance. "
+            "Must be critical and objective, not complimentary or vague."
+        ),
+    )
+
+    work_type: WorkType
