@@ -36,10 +36,10 @@ class WorkType(Enum):
 class CommitDetails(BaseModel):
     commit_summary: str = Field(
         ...,
-        min_length=300,
-        max_length=900,
+        min_length=100,
+        max_length=400,
         description=(
-            "A concise but detailed 3–5 sentence paragraph describing what was changed, "
+            "A concise but detailed 2–3 sentence paragraph describing what was changed, "
             "why it was done, and the concrete technical impact. "
             "Must be factual, specific, and avoid exaggeration or filler."
         ),
@@ -51,10 +51,10 @@ class CommitDetails(BaseModel):
 
     commiters_performance: str = Field(
         ...,
-        min_length=400,
-        max_length=1200,
+        min_length=100,
+        max_length=400,
         description=(
-            "A professional 4–6 sentence performance evaluation assessing technical value, "
+            "A professional 2–3 sentence performance evaluation assessing technical value, "
             "execution quality, clarity of intent, and whether the work matches its implied importance. "
             "Must be critical and objective, not complimentary or vague."
         ),
