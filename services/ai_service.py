@@ -158,10 +158,11 @@ STRICT COMPLIANCE IS REQUIRED AT ALL TIMES.
         "work_type" : resp.output_parsed.work_type.value
     }
 
-async def summarize_and_upload(diff_text, name, mail, repo_name, commit_title, db):
+async def summarize_and_upload(diff_text, name, mail, repo_name, commit_title, db, commit_hash = None):
     diff = await summarie_diff(get_openai(), diff_text, name, mail, repo_name, commit_title)
     diff["mail"] = mail
     diff["repo_name"] = repo_name
+    diff["commit_hash"] = commit_hash
     zep = get_personalizer()
     msg = botMessage(role = "assistant", content=f"""
         # WORK DONE BY YOU({name}) FOR THIS COMMIT:             

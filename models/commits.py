@@ -14,6 +14,7 @@ class Commit(BaseModel):
     repository_url: str
     diff: Optional[str] = None
     installation_id : Optional[int] = None
+    changes : Optional[dict]
 
 class WorkCategory(Enum):
     real : str = "real"

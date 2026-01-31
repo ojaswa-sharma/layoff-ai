@@ -61,3 +61,30 @@ async def fetch_diff_from_webhook(
                     f"Diff fetch failed {resp.status}: {body}"
                 )
             return await resp.text()
+
+def count_diff_stats(diff_text: str) -> dict:
+    additions = 0
+    deletions = 0
+
+    for line in diff_text.splitlines():
+        if not line:
+            continue
+
+        # skip diff metadata
+        if (
+            line.startswith("+++")
+            or line.startswith("---")
+            or line.startswith("@@")
+        ):
+            continue
+
+        if line.startswith("+"):
+            additions += 1
+        elif line.startswith("-"):
+            deletions += 1
+
+    return {
+        "additions": additions,
+        "deletions": deletions,
+        "changes": additions + deletions,
+    }
