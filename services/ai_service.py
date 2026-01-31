@@ -196,7 +196,9 @@ async def summarize_and_upload(diff_text, name, mail, repo_name, commit_title, d
     diff["mail"] = mail
     diff["repo_name"] = repo_name
     zep = get_personalizer()
-    msg = botMessage(role = "user", content=f"""
+    msg = botMessage(role = "assistant", content=f"""
+        # WORK DONE BY YOU({name}):             
+
         # Commit summary:
             {diff.get("commit_summmary")}
 
