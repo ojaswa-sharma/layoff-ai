@@ -121,38 +121,38 @@ class ZepPersonalizer():
         if not self.loop_running:
             self.loop_running = True
             asyncio.create_task(self.background_task())
-            try:
-                await self.zep_conn.user.add_user_summary_instructions(
-                    instructions=[
-                        UserInstruction(
-                            name="engineering_focus_and_strengths",
-                            text=(
-                                "Extract information about the developer's primary engineering focus, "
-                                "including dominant departments (ui, frontend, backend, devops), "
-                                "types of work they most frequently perform, and areas of technical strength."
-                            ),
-                        ),
-                        UserInstruction(
-                            name="contribution_quality_and_impact",
-                            text=(
-                                "Capture patterns related to the quality and impact of the developer's contributions, "
-                                "including frequency of real vs fake work, delivery of major features, "
-                                "handling of critical bugs, and tendency toward low-impact or cosmetic changes."
-                            ),
-                        ),
-                        UserInstruction(
-                            name="work_style_and_delivery_patterns",
-                            text=(
-                                "Capture the developer's work style and delivery behavior, such as consistency of output, "
-                                "preference for features vs bug fixes vs tech debt, clarity of commits, "
-                                "and recurring contribution patterns over time."
-                            )
-                        )
-                    ],
-                    user_ids=[]
-                )
-            except Exception as e:
-                print(f"[DEBUG] Error adding user instructions: {e}")
+            # try:
+            #     await self.zep_conn.user.add_user_summary_instructions(
+            #         instructions=[
+            #             UserInstruction(
+            #                 name="engineering_focus_and_strengths",
+            #                 text=(
+            #                     "Extract information about the developer's primary engineering focus, "
+            #                     "including dominant departments (ui, frontend, backend, devops), "
+            #                     "types of work they most frequently perform, and areas of technical strength."
+            #                 ),
+            #             ),
+            #             UserInstruction(
+            #                 name="contribution_quality_and_impact",
+            #                 text=(
+            #                     "Capture patterns related to the quality and impact of the developer's contributions, "
+            #                     "including frequency of real vs fake work, delivery of major features, "
+            #                     "handling of critical bugs, and tendency toward low-impact or cosmetic changes."
+            #                 ),
+            #             ),
+            #             UserInstruction(
+            #                 name="work_style_and_delivery_patterns",
+            #                 text=(
+            #                     "Capture the developer's work style and delivery behavior, such as consistency of output, "
+            #                     "preference for features vs bug fixes vs tech debt, clarity of commits, "
+            #                     "and recurring contribution patterns over time."
+            #                 )
+            #             )
+            #         ],
+            #         user_ids=[]
+            #     )
+            # except Exception as e:
+            #     print(f"[DEBUG] Error adding user instructions: {e}")
     
 
 
@@ -227,20 +227,16 @@ class ZepPersonalizer():
         await self.upsert_user(user_id, first_name, last_name, email)
 
         thread_id = str(thread_id)
-        try:
-            thread = await self.zep_conn.thread.get(thread_id)
-            print(f'[DEBUG] Thread : {thread}')
-        except:
-            thread = None
+        # try:
+        #     thread = await self.zep_conn.thread.get(thread_id)
+        #     print(f'[DEBUG] Thread : {thread}')
+        # except:
+        #     thread = None
 
-        if not thread:
-            await self.zep_conn.thread.create(thread_id=thread_id, user_id=user_id)
+        # if not thread:
+        #     await self.zep_conn.thread.create(thread_id=thread_id, user_id=user_id)
 
         text = message.content
-        curr = Message(role = str(message.role), content = str(text), metadata={
-            "repo_name" : repo_name
-        })
-
         # await self.zep_conn.thread.add_messages(thread_id=thread_id, messages=[curr])
         await self.zep_conn.graph.add(user_id=user_id, data = text, type="text", source_description="Data from github summarized by ai")
 
