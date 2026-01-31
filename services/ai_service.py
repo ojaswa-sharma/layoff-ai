@@ -172,7 +172,7 @@ async def summarie_diff(openai:AsyncOpenAI, diff_text, name, mail, repo_name, co
     """
 
     resp = await openai.responses.parse(
-        model="gpt-5-nano",
+        model="gpt-4.1-nano",
         input=[
             {"role": "system", "content": system_prompt},
             {
@@ -197,22 +197,16 @@ async def summarize_and_upload(diff_text, name, mail, repo_name, commit_title, d
     diff["repo_name"] = repo_name
     zep = get_personalizer()
     msg = botMessage(role = "assistant", content=f"""
-        # WORK DONE BY YOU({name}):             
+        # WORK DONE BY YOU({name}) FOR THIS COMMIT:             
 
         # Commit summary:
             {diff.get("commit_summmary")}
-
-        #Work Category:
-            {diff.get("work_category")}
 
         # Department:
             {diff.get("department")}
 
         # Commiter's performance:
             {diff.get("commiters_performance")}
-
-        # Work Type:
-            {diff.get("work_type")}
 
         # Diff:
             {diff_text}
