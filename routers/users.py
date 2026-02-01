@@ -33,7 +33,9 @@ async def list_users(db = Depends(get_mongo_db)):
 
         users_data = {}
         now = datetime.now(timezone.utc)
-
+        overall_negs = 0
+        overall_plus = 0
+        overall_status = "inactive"
         for doc in results:
             email = doc["_id"]["email"]
             repo_name = doc["_id"]["repo_name"]
@@ -45,8 +47,11 @@ async def list_users(db = Depends(get_mongo_db)):
             delta_hours = (now - last_commit).total_seconds() / 3600
             if delta_hours <= 6:
                 status = "active"
+                overall_status = "active"
             elif delta_hours <= 24:
                 status = "idle"
+                if overall_status != "active":
+                    overall_status = "idle"
             else:
                 status = "inactive"
 
@@ -56,6 +61,8 @@ async def list_users(db = Depends(get_mongo_db)):
                     "email": email,
                     "repos": []
                 }
+            overall_negs += int(doc["total_deletions"] or 0)
+            overall_plus += int(doc["total_additions"] or 0)
 
             users_data[email]["repos"].append({
                 "repo_name": repo_name,
@@ -65,7 +72,7 @@ async def list_users(db = Depends(get_mongo_db)):
                 "activity_status": status
             })
 
-        return list(users_data.values())
+        return {"user_data" : users_data.values(), "overall" : {"additions" : overall_plus, "neg" : overall_negs, "status" : overall_status}}
 
     except Exception as e:
         return {"error": str(e)}
