@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends
 from services.db import get_mongo_db
 from datetime import datetime, timezone, timedelta
 from pymongo import DESCENDING
+from services.zep_store import get_personalizer
+
 
 router = APIRouter(prefix='/v1/users')
 
@@ -69,3 +71,22 @@ async def list_users(db = Depends(get_mongo_db)):
 
     except Exception as e:
         return {"error": str(e)}
+
+@router.get('/developer/{email}')
+async def get_developer(
+    email : str,
+    project = None,
+    db = Depends(get_mongo_db),
+):
+    try:
+        personalizer = get_personalizer()
+        data = await personalizer.get_user_persona()
+        data_2 = None
+        if project:
+            data_2 = await personalizer.get_project_data(graph_id=f"{email}_{project}")
+        return {
+            "user_data" : data,
+            "project_data" : data_2
+        }
+    except Exception as e:
+        print(f"[ERROR] Error while getting data : {e}")

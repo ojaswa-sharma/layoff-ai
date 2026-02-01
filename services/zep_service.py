@@ -147,7 +147,6 @@ class ZepPersonalizer():
                     "Changes" : Changes,
                     "Positives" : Positives,
                     "Negatives" : Negatives,
-                    "Developer" : Developer
                 },
                 edges={
                     "REPOSITORY_CONTAINS_BUG": (
@@ -286,6 +285,18 @@ class ZepPersonalizer():
         except Exception as e:
             print(f"[ERROR] Error getting context: {e}")
             return ""
+    
+    async def get_project_data(self, graph_id, query = None):
+        if not query:
+            query = "What work was done by the developer, the bugs created, and the changes, as well as the positives and negatives"
+        try:
+            data = await self.zep_conn.graph.search(query = query, graph_id=graph_id, scope="nodes",search_filters={"edge_types" : ["Bug", "Positives", "Negatives", "Changes", "Commit"]})
+            for edge in data.nodes:
+                print(edge.summary)
+                print(edge.attributes)
+        except Exception as e:
+            print(f"[ERROR] Error while getting nodes : {e}")
+
 
     async def get_user_persona(self, user_id):
         try:
