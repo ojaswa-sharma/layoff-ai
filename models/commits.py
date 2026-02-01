@@ -50,6 +50,7 @@ class CommitDetails(BaseModel):
     )
 
     department: WorkDepartment
+    
 
     commiters_performance: str = Field(
         ...,
