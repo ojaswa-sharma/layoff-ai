@@ -137,6 +137,7 @@ async def get_developer(
                                 "performance": "$summary.commiters_performance",
                                 "additions": "$changes.additions",
                                 "deletions": "$changes.deletions",
+                                "commit_summary" : "$changes.commit_summmary"
                             }
                         }
                     ],
