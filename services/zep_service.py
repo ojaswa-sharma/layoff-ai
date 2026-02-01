@@ -124,6 +124,7 @@ class ZepPersonalizer():
                 existing = await self.zep_conn.user.get(user_id = user_id)
             if graph_id:
                 existing = await self.zep_conn.graph.get(graph_id=graph_id)
+            print(f"[DEBUG] User already exists")
         except Exception as e:
             print("Creating")
             if user_id:
