@@ -164,7 +164,6 @@ async def summarize_and_upload(diff_text, name, mail, repo_name, commit_title, d
     diff["repo_name"] = repo_name
     diff["commit_hash"] = commit_hash
     zep = get_personalizer()
-    await zep.setup_ontology()
     msg = botMessage(role="assistant", content=f"""
 Repository: {repo_name}
 Developer: {name}
