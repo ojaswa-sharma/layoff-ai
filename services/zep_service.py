@@ -295,19 +295,24 @@ class ZepPersonalizer():
                 graph_id=graph_id,
                 scope="nodes",
                 search_filters={
-                    "edge_types": [
-                        "BUG",
-                        "POSITIVES",
-                        "NEGATIVES",
-                        "CHANGES",
-                        "COMMIT",
+                    "labels": [
+                        "Bug",
+                        "Positives",
+                        "Negatives",
+                        "Changes",
+                        "Commit",
                     ]
                 },
             )
+            nodes = []
             for edge in data.nodes:
                 print(edge.labels)
-                print(edge.summary)
-                print(edge.attributes)
+                # print(edge.summary)
+                # print(edge.attributes)
+                nodes.append({
+                    "summary" : edge.summary,
+                    "attributes" : edge.attributes
+                })
         except Exception as e:
             print(f"[ERROR] Error while getting nodes : {e}")
 
