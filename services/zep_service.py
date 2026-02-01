@@ -313,6 +313,7 @@ class ZepPersonalizer():
                     "summary" : edge.summary,
                     "attributes" : edge.attributes
                 })
+            return nodes
         except Exception as e:
             print(f"[ERROR] Error while getting nodes : {e}")
 
