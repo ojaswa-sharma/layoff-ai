@@ -80,7 +80,7 @@ async def get_developer(
 ):
     try:
         personalizer = get_personalizer()
-        data = await personalizer.get_user_persona()
+        data = await personalizer.get_user_persona(user_id=f"user_{email}")
         data_2 = None
         if project:
             data_2 = await personalizer.get_project_data(graph_id=f"{email}_{project}")
