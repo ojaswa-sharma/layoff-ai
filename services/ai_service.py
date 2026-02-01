@@ -181,6 +181,7 @@ Performance Assessment:
 Code Changes:
 {diff_text[:2000]}
 """)
+    print(f"[DEBUG] Extraction successful, moving to db and zep")
     await asyncio.gather(zep.add_message(user_id = f"user_{mail}", message=msg, thread_id=repo_name, first_name=name, email=mail, repo_name=repo_name),
                          asyncio.to_thread(db.commit_summary.insert_one,diff),
                          zep.add_to_graph(graph_id=f"{mail}_{repo_name}", message=msg.content)
