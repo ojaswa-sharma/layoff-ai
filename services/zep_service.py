@@ -305,7 +305,7 @@ class ZepPersonalizer():
                 },
             )
             for edge in data.nodes:
-                print(edge.name)
+                print(edge.labels)
                 print(edge.summary)
                 print(edge.attributes)
         except Exception as e:
