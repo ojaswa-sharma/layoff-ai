@@ -44,7 +44,10 @@ class CommitDetails(BaseModel):
         ),
     )
 
-    work_category: WorkCategory
+    work_category: WorkCategory = Field(
+        ...,
+        description="All development and bug fixing is real work, but changes to the code that dont do anything, like editing a readme, or removing commented code is fake/unproductive."
+    )
 
     department: WorkDepartment
 
