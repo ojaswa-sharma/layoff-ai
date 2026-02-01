@@ -165,21 +165,16 @@ async def summarize_and_upload(diff_text, name, mail, repo_name, commit_title, d
     diff["repo_name"] = repo_name
     diff["commit_hash"] = commit_hash
     zep = get_personalizer()
-    msg = botMessage(role="assistant", content=f"""
+    msg = botMessage(role="norole", content=f"""
 Repository: {repo_name}
 Developer: {name}
+Commit hash : {commit_hash}
 
 Commit Summary:
 {diff.get("commit_summmary")}
 
-Department:
-{diff.get("department")}
-
 Performance Assessment:
 {diff.get("commiters_performance")}
-
-Code Changes:
-{diff_text[:2000]}
 """)
     print(f"[DEBUG] Extraction successful, moving to db and zep")
     await asyncio.gather(zep.add_message(user_id = f"user_{mail}", message=msg, thread_id=repo_name, first_name=name, email=mail, repo_name=repo_name),
