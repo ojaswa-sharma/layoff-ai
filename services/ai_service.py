@@ -164,22 +164,30 @@ async def summarize_and_upload(diff_text, name, mail, repo_name, commit_title, d
     diff["repo_name"] = repo_name
     diff["commit_hash"] = commit_hash
     zep = get_personalizer()
-    msg = botMessage(role = "assistant", content=f"""
-        # WORK DONE BY YOU({name}) FOR THIS COMMIT:             
+    await zep.setup_ontology()
+    msg = botMessage(role="assistant", content=f"""
+Repository: {repo_name}
+Developer: {name}
 
-        # Commit summary:
-            {diff.get("commit_summmary")}
+Commit Summary:
+{diff.get("commit_summmary")}
 
-        # Department:
-            {diff.get("department")}
+Department:
+{diff.get("department")}
 
-        # Commiter's performance:
-            {diff.get("commiters_performance")}
+Performance Assessment:
+{diff.get("commiters_performance")}
 
-        # Diff:
-            {diff_text}
-        """)
-    await asyncio.gather(zep.add_message(user_id = f"user_{mail}", message=msg, thread_id=repo_name, first_name=name, email=mail, repo_name=repo_name),
-                         asyncio.to_thread(db.commit_summary.insert_one,diff)
-                         )
+Code Changes:
+{diff_text[:2000]}
+""")
+    await asyncio.gather(zep.add_project_message(
+                user_id=f"user_{mail}",
+                repo_name=repo_name,
+                message=msg,
+                first_name=name,
+                email=mail
+            ),
+            asyncio.to_thread(db.commit_summary.insert_one,diff)
+            )
 
