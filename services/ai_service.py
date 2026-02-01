@@ -181,13 +181,7 @@ Performance Assessment:
 Code Changes:
 {diff_text[:2000]}
 """)
-    await asyncio.gather(zep.add_project_message(
-                user_id=f"user_{mail}",
-                repo_name=repo_name,
-                message=msg,
-                first_name=name,
-                email=mail
-            ),
-            asyncio.to_thread(db.commit_summary.insert_one,diff)
-            )
+    await asyncio.gather(zep.add_message(user_id = f"user_{mail}", message=msg, thread_id=repo_name, first_name=name, email=mail, repo_name=repo_name),
+                         asyncio.to_thread(db.commit_summary.insert_one,diff)
+                         )
 
