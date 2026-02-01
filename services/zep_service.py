@@ -160,7 +160,7 @@ class ZepPersonalizer():
             #         )
             #     )
             # ])
-                await self.zep_conn.graph.create(graph_id, fact_rating_instruction=self.user_summary_instruction)
+                await self.zep_conn.graph.create(graph_id=graph_id, fact_rating_instruction=self.user_summary_instruction)
 
                 await self.zep_conn.graph.set_ontology(
                 entities={
