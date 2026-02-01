@@ -306,7 +306,7 @@ class ZepPersonalizer():
                         "Commit",
                     ],
                     "created_at" : [
-                        {">" :  (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()}
+                        {">" :  (datetime.now(timezone.utc) - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")}
                     ]
                 },
                 limit=20
