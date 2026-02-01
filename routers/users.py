@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from services.db import get_mongo_db
 from datetime import datetime, timezone, timedelta
 from pymongo import DESCENDING
@@ -72,21 +72,142 @@ async def list_users(db = Depends(get_mongo_db)):
     except Exception as e:
         return {"error": str(e)}
 
+
 @router.get('/developer/{email}')
 async def get_developer(
-    email : str,
-    project = None,
-    db = Depends(get_mongo_db),
+    email: str,
+    project: str | None = None,
+    page: int = Query(1, ge=1),
+    limit: int = Query(10, ge=1, le=50),
+    db=Depends(get_mongo_db),
 ):
     try:
         personalizer = get_personalizer()
-        data = await personalizer.get_user_persona(user_id=f"user_{email}")
-        data_2 = None
+
+        user_data = await personalizer.get_user_persona(
+            user_id=f"user_{email}"
+        )
+
+        project_data = None
         if project:
-            data_2 = await personalizer.get_project_data(graph_id=f"{email}_{project}")
-        return {
-            "user_data" : data,
-            "project_data" : data_2
+            project_data = await personalizer.get_project_data(
+                graph_id=f"{email}_{project}"
+            )
+
+        commits_col = db["commits"]
+        summaries_col = db["commit_summary"]
+
+        match_stage = {
+            "email": email
         }
+        if project:
+            match_stage["repository_name"] = project
+
+        skip = (page - 1) * limit
+
+        pipeline = [
+            {"$match": match_stage},
+
+            {
+                "$lookup": {
+                    "from": "commit_summary",
+                    "localField": "commit_hash",
+                    "foreignField": "commit_hash",
+                    "as": "summary"
+                }
+            },
+            {"$unwind": {"path": "$summary", "preserveNullAndEmptyArrays": True}},
+
+            {
+                "$facet": {
+                    "commits": [
+                        {"$sort": {"date": -1}},
+                        {"$skip": skip},
+                        {"$limit": limit},
+                        {
+                            "$project": {
+                                "_id": 0,
+                                "commit_hash": 1,
+                                "commit_title": "$message",
+                                "date": 1,
+                                "repository_name": 1,
+                                "department": "$summary.department",
+                                "work_type": "$summary.work_type",
+                                "work_category": "$summary.work_category",
+                                "performance": "$summary.commiters_performance",
+                                "additions": "$changes.additions",
+                                "deletions": "$changes.deletions",
+                            }
+                        }
+                    ],
+
+                    "department_counts": [
+                        {
+                            "$group": {
+                                "_id": "$summary.department",
+                                "count": {"$sum": 1}
+                            }
+                        }
+                    ],
+
+                    "work_type_counts": [
+                        {
+                            "$group": {
+                                "_id": "$summary.work_type",
+                                "count": {"$sum": 1}
+                            }
+                        }
+                    ],
+
+                    "real_vs_fake": [
+                        {
+                            "$group": {
+                                "_id": "$summary.work_category",
+                                "count": {"$sum": 1}
+                            }
+                        }
+                    ],
+
+                    "total_commits": [
+                        {"$count": "count"}
+                    ]
+                }
+            }
+        ]
+
+        result = list(commits_col.aggregate(pipeline))[0]
+
+        return {
+            "user_data": user_data,
+            "project_data": project_data,
+
+            "stats": {
+                "departments": {
+                    d["_id"]: d["count"]
+                    for d in result["department_counts"] if d["_id"]
+                },
+                "work_types": {
+                    w["_id"]: w["count"]
+                    for w in result["work_type_counts"] if w["_id"]
+                },
+                "real_vs_fake": {
+                    r["_id"]: r["count"]
+                    for r in result["real_vs_fake"] if r["_id"]
+                },
+                "total_commits": (
+                    result["total_commits"][0]["count"]
+                    if result["total_commits"] else 0
+                )
+            },
+
+            "pagination": {
+                "page": page,
+                "limit": limit
+            },
+
+            "commit_history": result["commits"]
+        }
+
     except Exception as e:
-        print(f"[ERROR] Error while getting data : {e}")
+        print(f"[ERROR] Error while getting developer data: {e}")
+        return {"error": "Failed to fetch developer data"}
