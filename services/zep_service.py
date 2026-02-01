@@ -7,7 +7,7 @@ from collections import deque
 from dataclasses import dataclass
 
 from zep_cloud.client import AsyncZep
-from zep_cloud.types import Message, UserInstruction
+from zep_cloud.types import Message, UserInstruction, FactRatingInstruction
 from zep_cloud import EntityEdgeSourceTarget
 from models.zep_ontology import Repository, RepositoryContainsBug, RepositoryContainsFeature, Feature, FeatureRealizedByCommit, Bug, BugAddressedByCommit, Commit
 
@@ -124,7 +124,7 @@ class ZepPersonalizer():
                 existing = await self.zep_conn.user.get(user_id = user_id)
             if graph_id:
                 existing = await self.zep_conn.graph.get(graph_id=graph_id)
-        except:
+        except Exception as e:
             if user_id:
                 data = {"user_id" : user_id}
             if first_name:
@@ -137,6 +137,31 @@ class ZepPersonalizer():
             if user_id:
                 await self.zep_conn.user.add(**data)
             if graph_id:
+            #     await self.zep_conn.graph.create(graph_id, fact_rating_instruction=[
+            #     FactRatingInstruction(
+            #         instruction=(
+            #             "Extract information about the developer's primary engineering focus, "
+            #             "including dominant departments (ui, frontend, backend, devops), "
+            #             "types of work they most frequently perform, and areas of technical strength."
+            #         )
+            #     ),
+            #     FactRatingInstruction(
+            #         instruction=(
+            #             "Capture patterns related to the quality and impact of the developer's contributions, "
+            #             "including frequency of real vs fake work, delivery of major features, "
+            #             "handling of critical bugs, and tendency toward low-impact or cosmetic changes."
+            #         )
+            #     ),
+            #     FactRatingInstruction(
+            #         instruction=(
+            #             "Capture the developer's work style and delivery behavior, such as consistency of output, "
+            #             "preference for features vs bug fixes vs tech debt, clarity of commits, "
+            #             "and recurring contribution patterns over time."
+            #         )
+            #     )
+            # ])
+                await self.zep_conn.graph.create(graph_id, fact_rating_instruction=self.user_summary_instruction)
+
                 await self.zep_conn.graph.set_ontology(
                 entities={
                     "Repository": Repository,
