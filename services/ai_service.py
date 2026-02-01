@@ -140,6 +140,7 @@ STRICT COMPLIANCE IS REQUIRED AT ALL TIMES.
 
     resp = await openai.responses.parse(
         model="gpt-5-nano",
+        reasoning={"effort" : "minimal"},
         input=[
             {"role": "system", "content": system_prompt},
             {
