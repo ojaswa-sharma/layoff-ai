@@ -232,7 +232,7 @@ class ZepPersonalizer():
 
         thread_id = str(thread_id)
         text = message.content
-        await self.zep_conn.graph.add(user_id=user_id, data = text[:min(len(text), 9999)], type="text", source_description="Data from github summarized by ai")
+        await self.zep_conn.graph.add(graph_id=user_id, data = text[:min(len(text), 9999)], type="text", source_description="Data from github summarized by ai")
 
         return {"status" : "success"} 
 
