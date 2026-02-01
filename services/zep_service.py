@@ -303,16 +303,46 @@ class ZepPersonalizer():
                         "Commit",
                     ]
                 },
+                limit=20
             )
             nodes = []
             for edge in data.nodes:
                 print(edge.labels)
                 # print(edge.summary)
                 # print(edge.attributes)
-                nodes.append({
-                    "summary" : edge.summary,
-                    "attributes" : edge.attributes
-                })
+                if "Positives" in edge.labels:
+                    nodes.append({
+                        "type" : "POSITVE",
+                        "summary" : edge.summary,
+                        "attributes" : edge.attributes
+                    })
+                elif "Commit" in edge.labels:
+                    nodes.append({
+                        "type" : "COMMIT",
+                        "summary" : edge.summary,
+                        "attributes" : edge.attributes
+                    })
+                elif "Bug" in edge.labels:
+                    nodes.append({
+                        "type" : "BUG",
+                        "summary" : edge.summary,
+                        "attributes" : edge.attributes
+                    })
+                elif "Changes" in edge.labels:
+                    nodes.append({
+                        "type" : "CHANGES",
+                        "summary" : edge.summary,
+                        "attributes" : edge.attributes
+                    })
+                elif "Negatives" in edge.labels:
+                    nodes.append({
+                        "type" : "NEGATIVES",
+                        "summary" : edge.summary,
+                        "attributes" : edge.attributes
+                    })
+
+
+
             return nodes
         except Exception as e:
             print(f"[ERROR] Error while getting nodes : {e}")
