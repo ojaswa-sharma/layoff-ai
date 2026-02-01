@@ -32,10 +32,15 @@ async def list_users(db = Depends(get_mongo_db)):
         now = datetime.now(timezone.utc)
 
         users_data = {}
+        now = datetime.now(timezone.utc)
+
         for doc in results:
             email = doc["_id"]["email"]
             repo_name = doc["_id"]["repo_name"]
             last_commit = doc["last_commit_date"]
+
+            if last_commit.tzinfo is None:
+                last_commit = last_commit.replace(tzinfo=timezone.utc)
 
             delta_hours = (now - last_commit).total_seconds() / 3600
             if delta_hours <= 6:
@@ -44,6 +49,7 @@ async def list_users(db = Depends(get_mongo_db)):
                 status = "idle"
             else:
                 status = "inactive"
+
 
             if email not in users_data:
                 users_data[email] = {
