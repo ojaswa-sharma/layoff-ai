@@ -121,7 +121,7 @@ class ZepPersonalizer():
     async def upsert_user(self, user_id=None, first_name = None, last_name = None, email = None, graph_id = None):
         try:
             if user_id:
-                existing = await self.zep_conn.graph.get(graph_id = user_id)
+                existing = await self.zep_conn.user.get(user_id = user_id)
             if graph_id:
                 existing = await self.zep_conn.graph.get(graph_id=graph_id)
         except Exception as e:
