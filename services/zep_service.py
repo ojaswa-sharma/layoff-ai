@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from zep_cloud.client import AsyncZep
 from zep_cloud.types import Message, UserInstruction, FactRatingInstruction
 from zep_cloud import EntityEdgeSourceTarget
-from models.zep_ontology import Repository, RepositoryContainsBug, RepositoryContainsFeature, Feature, FeatureRealizedByCommit, Bug, BugAddressedByCommit, Commit, Positives, Negatives, Changes
+from models.zep_ontology import Repository, RepositoryContainsBug, RepositoryContainsFeature, Feature, FeatureRealizedByCommit, Bug, BugAddressedByCommit, Commit, Positives, Negatives, Changes, Developer
 
 @dataclass(frozen=True)
 class botMessage:
@@ -135,7 +135,41 @@ class ZepPersonalizer():
                 data['email'] = email
 
             if user_id:
-                await self.zep_conn.user.add(**data)
+                # await self.zep_conn.user.add(**data)
+                await self.zep_conn.graph.create(graph_id=user_id, fact_rating_instruction=FactRatingInstruction(instruction=self.user_summary_instruction))
+
+                await self.zep_conn.graph.set_ontology(
+                entities={
+                    "Repository": Repository,
+                    "Bug": Bug,
+                    "Feature": Feature,
+                    "Commit": Commit,
+                    "Changes" : Changes,
+                    "Positives" : Positives,
+                    "Negatives" : Negatives,
+                    "Developer" : Developer
+                },
+                edges={
+                    "REPOSITORY_CONTAINS_BUG": (
+                        RepositoryContainsBug,
+                        [EntityEdgeSourceTarget(source="Repository", target="Bug")],
+                    ),
+                    "REPOSITORY_CONTAINS_FEATURE": (
+                        RepositoryContainsFeature,
+                        [EntityEdgeSourceTarget(source="Repository", target="Feature")],
+                    ),
+                    "BUG_ADDRESSED_BY_COMMIT": (
+                        BugAddressedByCommit,
+                        [EntityEdgeSourceTarget(source="Bug", target="Commit")],
+                    ),
+                    "FEATURE_REALIZED_BY_COMMIT": (
+                        FeatureRealizedByCommit,
+                        [EntityEdgeSourceTarget(source="Feature", target="Commit")],
+                    ),
+                },
+                graph_ids=[graph_id]
+            )
+
             if graph_id:
             #     await self.zep_conn.graph.create(graph_id, fact_rating_instruction=[
             #     FactRatingInstruction(

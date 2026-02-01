@@ -69,6 +69,14 @@ class Commit(EntityModel):
         description="Detailed description of the commit"
     )
 
+class Developer(EntityModel):
+    """
+    Represents the developer
+    """
+    email : EntityModel = Field(description="The email of the developer")
+    name : EntityModel = Field(description="The name of the developer")
+    
+
 class Changes(EntityModel):
     """
     Represents the changes in a commit
