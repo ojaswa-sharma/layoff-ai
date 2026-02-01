@@ -72,7 +72,7 @@ async def list_users(db = Depends(get_mongo_db)):
                 "activity_status": status
             })
 
-        return {"user_data" : users_data.values(), "overall" : {"additions" : overall_plus, "neg" : overall_negs, "status" : overall_status}}
+        return {"user_data" : list(users_data.values()), "overall" : {"additions" : overall_plus, "neg" : overall_negs, "status" : overall_status}}
 
     except Exception as e:
         return {"error": str(e)}
