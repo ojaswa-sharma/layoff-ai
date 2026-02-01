@@ -69,6 +69,24 @@ class Commit(EntityModel):
         description="Detailed description of the commit"
     )
 
+class Changes(EntityModel):
+    """
+    Represents the changes in a commit
+    """
+    change_text : EntityText = Field(description="Summary of changes done in a commit")
+
+class Positives(EntityModel):
+    """
+    Represents the actual good work done by the developer
+    """
+    positve_work_summary : EntityText = Field(description="The good work done by the developer")
+
+class Negatives(EntityModel):
+    """
+    Represents the issues or bad coding practices followed by the developer
+    """
+    negative_work_summary : EntityText = Field(description="The issues or bad coding practices done by the developer")
+
 
 # =========================
 # EDGE DEFINITIONS (DATA LIVES HERE)

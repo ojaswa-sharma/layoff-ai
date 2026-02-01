@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from zep_cloud.client import AsyncZep
 from zep_cloud.types import Message, UserInstruction, FactRatingInstruction
 from zep_cloud import EntityEdgeSourceTarget
-from models.zep_ontology import Repository, RepositoryContainsBug, RepositoryContainsFeature, Feature, FeatureRealizedByCommit, Bug, BugAddressedByCommit, Commit
+from models.zep_ontology import Repository, RepositoryContainsBug, RepositoryContainsFeature, Feature, FeatureRealizedByCommit, Bug, BugAddressedByCommit, Commit, Positives, Negatives, Changes
 
 @dataclass(frozen=True)
 class botMessage:
@@ -168,6 +168,9 @@ class ZepPersonalizer():
                     "Bug": Bug,
                     "Feature": Feature,
                     "Commit": Commit,
+                    "Changes" : Changes,
+                    "Positives" : Positives,
+                    "Negatives" : Negatives
                 },
                 edges={
                     "REPOSITORY_CONTAINS_BUG": (
