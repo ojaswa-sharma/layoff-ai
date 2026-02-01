@@ -305,6 +305,7 @@ class ZepPersonalizer():
                 },
                 limit=20
             )
+
             nodes = []
             for edge in data.nodes:
                 print(edge.labels)
