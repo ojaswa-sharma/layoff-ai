@@ -8,6 +8,8 @@ from dataclasses import dataclass
 
 from zep_cloud.client import AsyncZep
 from zep_cloud.types import Message, UserInstruction
+from zep_cloud import EntityEdgeSourceTarget
+from models.zep_ontology import Repository, RepositoryContainsBug, RepositoryContainsFeature, Feature, FeatureRealizedByCommit, Bug, BugAddressedByCommit, Commit
 
 @dataclass(frozen=True)
 class botMessage:
@@ -116,11 +118,15 @@ class ZepPersonalizer():
 
         self.loop_running = False
 
-    async def upsert_user(self, user_id, first_name = None, last_name = None, email = None):
+    async def upsert_user(self, user_id=None, first_name = None, last_name = None, email = None, graph_id = None):
         try:
-            existing = await self.zep_conn.user.get(user_id = user_id)
+            if user_id:
+                existing = await self.zep_conn.user.get(user_id = user_id)
+            if graph_id:
+                existing = await self.zep_conn.graph.get(graph_id=graph_id)
         except:
-            data = {"user_id" : user_id}
+            if user_id:
+                data = {"user_id" : user_id}
             if first_name:
                 data['first_name'] = first_name.split()[0] if first_name.split() else first_name
             if last_name:
@@ -128,8 +134,36 @@ class ZepPersonalizer():
             if email:
                 data['email'] = email
 
-
-            await self.zep_conn.user.add(**data)
+            if user_id:
+                await self.zep_conn.user.add(**data)
+            if graph_id:
+                await self.zep_conn.graph.set_ontology(
+                entities={
+                    "Repository": Repository,
+                    "Bug": Bug,
+                    "Feature": Feature,
+                    "Commit": Commit,
+                },
+                edges={
+                    "REPOSITORY_CONTAINS_BUG": (
+                        RepositoryContainsBug,
+                        [EntityEdgeSourceTarget(source="Repository", target="Bug")],
+                    ),
+                    "REPOSITORY_CONTAINS_FEATURE": (
+                        RepositoryContainsFeature,
+                        [EntityEdgeSourceTarget(source="Repository", target="Feature")],
+                    ),
+                    "BUG_ADDRESSED_BY_COMMIT": (
+                        BugAddressedByCommit,
+                        [EntityEdgeSourceTarget(source="Bug", target="Commit")],
+                    ),
+                    "FEATURE_REALIZED_BY_COMMIT": (
+                        FeatureRealizedByCommit,
+                        [EntityEdgeSourceTarget(source="Feature", target="Commit")],
+                    ),
+                },
+                graph_ids=[graph_id]
+            )
 
     async def add_message(self, user_id, message, thread_id, first_name = "", last_name = "", repo_name = None, email = None):
         await self.upsert_user(user_id, first_name, last_name, email)
@@ -139,6 +173,15 @@ class ZepPersonalizer():
         await self.zep_conn.graph.add(user_id=user_id, data = text[:min(len(text), 9999)], type="text", source_description="Data from github summarized by ai")
 
         return {"status" : "success"} 
+
+    async def add_to_graph(self, graph_id, message):
+        await self.upsert_user(graph_id=graph_id)
+        await self.zep_conn.graph.add(
+            data = message[:min(len(message), 9999)],
+            graph_id=graph_id,
+            source_description="Data from github summarized by ai",
+            type="text",
+        )
 
     async def add_fact(self, user_id, message, first_name = "", last_name = ""):
         await self.upsert_user(user_id, first_name, last_name)

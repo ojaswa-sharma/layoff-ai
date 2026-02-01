@@ -181,6 +181,7 @@ Code Changes:
 {diff_text[:2000]}
 """)
     await asyncio.gather(zep.add_message(user_id = f"user_{mail}", message=msg, thread_id=repo_name, first_name=name, email=mail, repo_name=repo_name),
-                         asyncio.to_thread(db.commit_summary.insert_one,diff)
+                         asyncio.to_thread(db.commit_summary.insert_one,diff),
+                         zep.add_to_graph(graph_id=f"graph_{mail}", message=msg.content)
                          )
 
