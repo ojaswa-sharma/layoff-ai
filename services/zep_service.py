@@ -136,7 +136,7 @@ class ZepPersonalizer():
 
             if user_id:
                 # await self.zep_conn.user.add(**data)
-                await self.zep_conn.graph.create(graph_id=user_id, fact_rating_instruction=FactRatingInstruction(instruction=self.user_summary_instruction))
+                await self.zep_conn.user.add(graph_id=user_id, fact_rating_instruction=FactRatingInstruction(instruction=self.user_summary_instruction))
 
                 await self.zep_conn.graph.set_ontology(
                 entities={
@@ -167,7 +167,7 @@ class ZepPersonalizer():
                         [EntityEdgeSourceTarget(source="Feature", target="Commit")],
                     ),
                 },
-                graph_ids=[user_id]
+                user_ids=[user_id]
             )
 
             if graph_id:
@@ -232,7 +232,7 @@ class ZepPersonalizer():
 
         thread_id = str(thread_id)
         text = message.content
-        await self.zep_conn.graph.add(graph_id=user_id, data = text[:min(len(text), 9999)], type="text", source_description="Data from github summarized by ai")
+        await self.zep_conn.graph.add(user_id=user_id, data = text[:min(len(text), 9999)], type="text", source_description="Data from github summarized by ai")
 
         return {"status" : "success"} 
 
