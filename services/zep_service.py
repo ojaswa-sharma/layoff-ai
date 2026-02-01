@@ -167,7 +167,7 @@ class ZepPersonalizer():
                         [EntityEdgeSourceTarget(source="Feature", target="Commit")],
                     ),
                 },
-                graph_ids=[graph_id]
+                graph_ids=[user_id]
             )
 
             if graph_id:
