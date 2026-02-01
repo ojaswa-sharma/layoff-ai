@@ -290,7 +290,20 @@ class ZepPersonalizer():
         if not query:
             query = "What work was done by the developer, the bugs created, and the changes, as well as the positives and negatives"
         try:
-            data = await self.zep_conn.graph.search(query = query, graph_id=graph_id, scope="nodes",search_filters={"edge_types" : ["Bug", "Positives", "Negatives", "Changes", "Commit"]})
+            data = await self.zep_conn.graph.search(
+                query=query,
+                graph_id=graph_id,
+                scope="nodes",
+                search_filters={
+                    "edge_types": [
+                        "BUG",
+                        "POSITIVES",
+                        "NEGATIVES",
+                        "CHANGES",
+                        "COMMIT",
+                    ]
+                },
+            )
             for edge in data.nodes:
                 print(edge.summary)
                 print(edge.attributes)
