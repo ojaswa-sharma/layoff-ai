@@ -10,6 +10,7 @@ from zep_cloud.client import AsyncZep
 from zep_cloud.types import Message, UserInstruction, FactRatingInstruction
 from zep_cloud import EntityEdgeSourceTarget
 from models.zep_ontology import Repository, RepositoryContainsBug, RepositoryContainsFeature, Feature, FeatureRealizedByCommit, Bug, BugAddressedByCommit, Commit, Positives, Negatives, Changes, Developer
+from datetime import datetime, timedelta, timezone
 
 @dataclass(frozen=True)
 class botMessage:
@@ -303,6 +304,9 @@ class ZepPersonalizer():
                         "Negatives",
                         "Changes",
                         "Commit",
+                    ],
+                    "created_at" : [
+                        {">" :  (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()}
                     ]
                 },
                 limit=20
