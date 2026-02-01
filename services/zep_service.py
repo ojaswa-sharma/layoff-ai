@@ -136,7 +136,7 @@ class ZepPersonalizer():
 
             if user_id:
                 # await self.zep_conn.user.add(**data)
-                await self.zep_conn.user.add(graph_id=user_id, fact_rating_instruction=FactRatingInstruction(instruction=self.user_summary_instruction))
+                await self.zep_conn.user.add(user_id=user_id, fact_rating_instruction=FactRatingInstruction(instruction=self.user_summary_instruction))
 
                 await self.zep_conn.graph.set_ontology(
                 entities={
