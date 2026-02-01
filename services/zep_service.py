@@ -331,33 +331,47 @@ class ZepPersonalizer():
         self.tasks = deque()
         self.lock = asyncio.Lock()
         self.loop_running = False
+        self.ontology_initialized = False
 
-    async def setup_ontology(self, user_ids=None, repo_name=None):
+    async def setup_ontology(self, user_ids=None):
         """
         Set up custom ontology for project analysis.
-        If user_ids provided, set ontology for specific users.
-        If repo_name provided, use it as graph_id for repo-specific ontology.
+        
+        IMPORTANT: In Zep's graph system:
+        - You CAN'T set ontology for specific graph_ids that don't exist yet
+        - You CAN set ontology project-wide OR for specific user_ids
+        - When adding data with graph_id, Zep will use the ontology from:
+          1. User-specific ontology (if set for that user_id)
+          2. Project-wide ontology (if set)
+          3. Default ontology (fallback)
+        
+        Best practice: Set ontology project-wide ONCE at startup
         """
         try:
-            if user_ids or repo_name:
-                # Set ontology for specific users/repos
-                graph_ids = [repo_name] if repo_name else None
+            if self.ontology_initialized:
+                print("[INFO] Ontology already initialized, skipping")
+                return
+                
+            if user_ids:
+                # Set ontology for specific users
                 await self.zep_conn.graph.set_ontology(
                     user_ids=user_ids,
-                    graph_ids=graph_ids,
                     entities=self.project_ontology["entities"],
                     edges=self.project_ontology["edges"]
                 )
-                print(f"[INFO] Custom ontology set for users: {user_ids}, graphs: {graph_ids}")
+                print(f"[INFO] Custom ontology set for users: {user_ids}")
             else:
-                # Set ontology project-wide
+                # Set ontology project-wide (RECOMMENDED)
                 await self.zep_conn.graph.set_ontology(
                     entities=self.project_ontology["entities"],
                     edges=self.project_ontology["edges"]
                 )
                 print(f"[INFO] Custom ontology set project-wide")
+                self.ontology_initialized = True
+                
         except Exception as e:
             print(f"[ERROR] Error setting ontology: {e}")
+            # Don't fail hard - Zep will use default ontology as fallback
 
     async def upsert_user(self, user_id, first_name = None, last_name = None, email = None, disable_default_ontology = False):
         """
@@ -366,6 +380,7 @@ class ZepPersonalizer():
         """
         try:
             existing = await self.zep_conn.user.get(user_id = user_id)
+            print(f"[INFO] User {user_id} already exists")
         except:
             data = {"user_id" : user_id}
             if first_name:
@@ -393,6 +408,7 @@ class ZepPersonalizer():
         text = message.content
         
         # Add to user's general graph
+        # IMPORTANT: Only pass user_id, NOT graph_id
         await self.zep_conn.graph.add(
             user_id=user_id, 
             data=text[:min(len(text), 9999)], 
@@ -405,32 +421,40 @@ class ZepPersonalizer():
     async def add_project_message(self, user_id, repo_name, message, first_name = "", last_name = "", email = None):
         """
         Add a repo-specific message to a developer's project graph.
-        This creates/updates the repo-specific node for the user.
+        
+        CRITICAL FIX: In Zep, you can ONLY pass either user_id OR graph_id, not both.
+        
+        For repo-specific graphs:
+        - Use graph_id = f"{user_id}_{repo_name}" to create a unique graph per user-repo combination
+        - Do NOT pass user_id when using graph_id
         
         Structure:
-        - Each user has ONE general graph (user_id)
-        - Each user has N project-specific graphs (graph_id = repo_name)
-        - The general graph aggregates insights from all projects
-        - Project graphs contain repo-specific analysis
+        - Each user has ONE general graph (user_id only)
+        - Each user-repo combination has ONE graph (graph_id = user_id_reponame)
+        - The ontology is applied based on project-wide settings
         """
         await self.upsert_user(user_id, first_name, last_name, email)
-        
-        # Ensure ontology is set for this repo
-        await self.setup_ontology(user_ids=[user_id], repo_name=repo_name)
 
         text = message.content if hasattr(message, 'content') else str(message)
         
-        # Add to repo-specific graph
-        await self.zep_conn.graph.add(
-            user_id=user_id,
-            graph_id=repo_name,  # This creates a separate graph for this repo
-            data=text[:min(len(text), 9999)],
-            type="text",
-            source_description=f"Commit data from repository: {repo_name}"
-        )
+        # Create a unique graph_id for this user-repo combination
+        # CRITICAL: Pass ONLY graph_id, not user_id
+        graph_id = f"{user_id}_{repo_name}"
         
-        print(f"[INFO] Added project message for user {user_id} in repo {repo_name}")
-        return {"status": "success"}
+        try:
+            await self.zep_conn.graph.add(
+                graph_id=graph_id,  # ✅ ONLY graph_id
+                # user_id=user_id,  # ❌ Do NOT pass user_id with graph_id
+                data=text[:min(len(text), 9999)],
+                type="text",
+                source_description=f"Commit data from repository: {repo_name}"
+            )
+            
+            print(f"[INFO] Added project message for user {user_id} in repo {repo_name} (graph: {graph_id})")
+            return {"status": "success"}
+        except Exception as e:
+            print(f"[ERROR] Failed to add project message: {e}")
+            return {"status": "error", "message": str(e)}
 
     async def add_fact(self, user_id, message, first_name = "", last_name = ""):
         """
@@ -445,7 +469,7 @@ class ZepPersonalizer():
             await self.zep_conn.graph.add(
                 data = fact_text[:min(len(fact_text), 9999)],
                 type= fact_type,
-                user_id = user_id
+                user_id = user_id  # ✅ Only user_id for general graph
             )
 
             return {"status" : "success"}
@@ -469,13 +493,14 @@ class ZepPersonalizer():
         try:
             search_params = {
                 "query": query,
-                "user_id": user_id,
                 "scope": "nodes"
             }
             
             # If repo_name is provided, search the repo-specific graph
             if repo_name:
-                search_params["graph_id"] = repo_name
+                search_params["graph_id"] = f"{user_id}_{repo_name}"
+            else:
+                search_params["user_id"] = user_id
             
             fact_objs = await self.zep_conn.graph.search(**search_params)
             facts = []
@@ -505,6 +530,8 @@ class ZepPersonalizer():
         try:
             print(f"[DEBUG] Getting repo analysis for user {user_id} in repo {repo_name}")
             
+            graph_id = f"{user_id}_{repo_name}"
+            
             analysis = {
                 "repo_name": repo_name,
                 "strengths": [],
@@ -515,89 +542,99 @@ class ZepPersonalizer():
             }
             
             # Search for strengths
-            strength_results = await self.zep_conn.graph.search(
-                user_id=user_id,
-                graph_id=repo_name,
-                query="developer strengths and skills",
-                scope="nodes",
-                search_filters={"node_labels": ["DeveloperStrength"]},
-                limit=10
-            )
-            
-            for node in strength_results.nodes:
-                analysis["strengths"].append({
-                    "name": node.name,
-                    "summary": node.summary,
-                    "attributes": node.attributes
-                })
+            try:
+                strength_results = await self.zep_conn.graph.search(
+                    graph_id=graph_id,
+                    query="developer strengths and skills",
+                    scope="nodes",
+                    search_filters={"node_labels": ["DeveloperStrength"]},
+                    limit=10
+                )
+                
+                for node in strength_results.nodes:
+                    analysis["strengths"].append({
+                        "name": node.name,
+                        "summary": node.summary,
+                        "attributes": node.attributes
+                    })
+            except Exception as e:
+                print(f"[DEBUG] No strengths found or error: {e}")
             
             # Search for weaknesses
-            weakness_results = await self.zep_conn.graph.search(
-                user_id=user_id,
-                graph_id=repo_name,
-                query="developer weaknesses and areas for improvement",
-                scope="nodes",
-                search_filters={"node_labels": ["DeveloperWeakness"]},
-                limit=10
-            )
-            
-            for node in weakness_results.nodes:
-                analysis["weaknesses"].append({
-                    "name": node.name,
-                    "summary": node.summary,
-                    "attributes": node.attributes
-                })
+            try:
+                weakness_results = await self.zep_conn.graph.search(
+                    graph_id=graph_id,
+                    query="developer weaknesses and areas for improvement",
+                    scope="nodes",
+                    search_filters={"node_labels": ["DeveloperWeakness"]},
+                    limit=10
+                )
+                
+                for node in weakness_results.nodes:
+                    analysis["weaknesses"].append({
+                        "name": node.name,
+                        "summary": node.summary,
+                        "attributes": node.attributes
+                    })
+            except Exception as e:
+                print(f"[DEBUG] No weaknesses found or error: {e}")
             
             # Search for work summaries
-            work_results = await self.zep_conn.graph.search(
-                user_id=user_id,
-                graph_id=repo_name,
-                query="work summary and contributions",
-                scope="nodes",
-                search_filters={"node_labels": ["WorkSummary"]},
-                limit=10
-            )
-            
-            for node in work_results.nodes:
-                analysis["work_summaries"].append({
-                    "name": node.name,
-                    "summary": node.summary,
-                    "attributes": node.attributes
-                })
+            try:
+                work_results = await self.zep_conn.graph.search(
+                    graph_id=graph_id,
+                    query="work summary and contributions",
+                    scope="nodes",
+                    search_filters={"node_labels": ["WorkSummary"]},
+                    limit=10
+                )
+                
+                for node in work_results.nodes:
+                    analysis["work_summaries"].append({
+                        "name": node.name,
+                        "summary": node.summary,
+                        "attributes": node.attributes
+                    })
+            except Exception as e:
+                print(f"[DEBUG] No work summaries found or error: {e}")
             
             # Search for recommendations
-            rec_results = await self.zep_conn.graph.search(
-                user_id=user_id,
-                graph_id=repo_name,
-                query="recommendations for developer",
-                scope="nodes",
-                search_filters={"node_labels": ["Recommendation"]},
-                limit=10
-            )
-            
-            for node in rec_results.nodes:
-                analysis["recommendations"].append({
-                    "name": node.name,
-                    "summary": node.summary,
-                    "attributes": node.attributes
-                })
+            try:
+                rec_results = await self.zep_conn.graph.search(
+                    graph_id=graph_id,
+                    query="recommendations for developer",
+                    scope="nodes",
+                    search_filters={"node_labels": ["Recommendation"]},
+                    limit=10
+                )
+                
+                for node in rec_results.nodes:
+                    analysis["recommendations"].append({
+                        "name": node.name,
+                        "summary": node.summary,
+                        "attributes": node.attributes
+                    })
+            except Exception as e:
+                print(f"[DEBUG] No recommendations found or error: {e}")
             
             # Search for patterns
-            pattern_results = await self.zep_conn.graph.search(
-                user_id=user_id,
-                graph_id=repo_name,
-                query="commit patterns and behaviors",
-                scope="nodes",
-                search_filters={"node_labels": ["CommitPattern"]},
-                limit=10
-            )
-            
-            for node in pattern_results.nodes:
-                analysis["patterns"].append({
-                    "name": node.name,
-                    "summary": node.summary,
-                    "attributes": node.attributes
-                })
+            try:
+                pattern_results = await self.zep_conn.graph.search(
+                    graph_id=graph_id,
+                    query="commit patterns and behaviors",
+                    scope="nodes",
+                    search_filters={"node_labels": ["CommitPattern"]},
+                    limit=10
+                )
+                
+                for node in pattern_results.nodes:
+                    analysis["patterns"].append({
+                        "name": node.name,
+                        "summary": node.summary,
+                        "attributes": node.attributes
+                    })
+            except Exception as e:
+                print(f"[DEBUG] No patterns found or error: {e}")
             
             return analysis
             
@@ -621,8 +658,6 @@ class ZepPersonalizer():
             
             if repo_name:
                 # Get repo-specific analysis instead of persona
-                # The persona lives on the user node, which is in the general graph
-                # For repo-specific insights, use get_repo_analysis instead
                 print(f"[INFO] For repo-specific analysis, use get_repo_analysis()")
                 return await self.get_repo_analysis(user_id, repo_name)
             
@@ -682,8 +717,10 @@ class ZepPersonalizer():
                 "repositories": []
             }
             
+            # Get all repos
             repos = await self.get_all_repos_for_user(user_id)
             
+            # Get analysis for each repo
             for repo in repos:
                 repo_name = repo["name"]
                 repo_analysis = await self.get_repo_analysis(user_id, repo_name)
