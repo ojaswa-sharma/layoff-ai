@@ -125,6 +125,7 @@ class ZepPersonalizer():
             if graph_id:
                 existing = await self.zep_conn.graph.get(graph_id=graph_id)
         except Exception as e:
+            print("Creating")
             if user_id:
                 data = {"user_id" : user_id}
             if first_name:
