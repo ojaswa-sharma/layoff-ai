@@ -305,7 +305,6 @@ class ZepPersonalizer():
                 },
                 limit=20
             )
-            # temp = await self.zep_conn.graph.node.get_by_graph_id
             nodes = []
             for edge in data.nodes:
                 print(edge.labels)
