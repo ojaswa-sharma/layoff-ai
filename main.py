@@ -29,3 +29,4 @@ app.add_middleware(
 for _router in _all:
     app.include_router(_router)
 
+print(f"[MAIN] App initialized from house-of-apps-ai-engineering-manager")
