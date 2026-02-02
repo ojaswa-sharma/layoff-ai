@@ -101,99 +101,20 @@ async def get_developer(
 
         commits_col = db["commits"]
 
-        # ------------------------------------------------------------------
-        # CASE 1: NO PROJECT → repo-level summary
-        # ------------------------------------------------------------------
-        if not project:
-            pipeline = [
-                {"$match": {"email": email}},
+        match_stage = {"email": email}
+        project_data = None
 
-                {
-                    "$lookup": {
-                        "from": "commit_summary",
-                        "localField": "commit_hash",
-                        "foreignField": "commit_hash",
-                        "as": "summary",
-                    }
-                },
-                {
-                    "$unwind": {
-                        "path": "$summary",
-                        "preserveNullAndEmptyArrays": True,
-                    }
-                },
-
-                {"$sort": {"date": -1}},
-
-                {
-                    "$group": {
-                        "_id": "$repository_name",
-
-                        "last_commit_hash": {"$first": "$commit_hash"},
-                        "last_commit_title": {"$first": "$message"},
-                        "last_commit_date": {"$first": "$date"},
-
-                        "department": {"$first": "$summary.department"},
-                        "work_type": {"$first": "$summary.work_type"},
-                        "work_category": {"$first": "$summary.work_category"},
-                        "performance": {"$first": "$summary.commiters_performance"},
-                        "commit_summary": {"$first": "$summary.commit_summmary"},
-
-                        "additions": {"$first": "$changes.additions"},
-                        "deletions": {"$first": "$changes.deletions"},
-                    }
-                },
-
-                {"$sort": {"last_commit_date": -1}},
-
-                {
-                    "$project": {
-                        "_id": 0,
-                        "repository_name": "$_id",
-                        "last_commit": {
-                            "commit_hash": "$last_commit_hash",
-                            "title": "$last_commit_title",
-                            "date": "$last_commit_date",
-                            "additions": "$additions",
-                            "deletions": "$deletions",
-                        },
-                        "summary": {
-                            "department": "$department",
-                            "work_type": "$work_type",
-                            "work_category": "$work_category",
-                            "performance": "$performance",
-                            "commit_summary": "$commit_summary",
-                        },
-                    }
-                },
-            ]
-
-            repos = list(commits_col.aggregate(pipeline))
-
-            return {
-                "user_data": user_data,
-                "stats": {
-                    "total_projects": len(repos),
-                },
-                "repositories": repos,
-            }
-
-        # ------------------------------------------------------------------
-        # CASE 2: PROJECT PROVIDED → commit-level detail (existing behavior)
-        # ------------------------------------------------------------------
-        project_data = await personalizer.get_project_data(
-            graph_id=f"{email}_{project}"
-        )
+        # scope by repo ONLY if provided
+        if project:
+            match_stage["repository_name"] = project
+            project_data = await personalizer.get_project_data(
+                graph_id=f"{email}_{project}"
+            )
 
         skip = (page - 1) * limit
 
         pipeline = [
-            {
-                "$match": {
-                    "email": email,
-                    "repository_name": project,
-                }
-            },
+            {"$match": match_stage},
 
             {
                 "$lookup": {
@@ -212,6 +133,9 @@ async def get_developer(
 
             {
                 "$facet": {
+                    # ------------------------------------------------------
+                    # COMMIT HISTORY (global OR per repo)
+                    # ------------------------------------------------------
                     "commits": [
                         {"$sort": {"date": -1}},
                         {"$skip": skip},
@@ -234,6 +158,9 @@ async def get_developer(
                         },
                     ],
 
+                    # ------------------------------------------------------
+                    # STATS (global OR per repo)
+                    # ------------------------------------------------------
                     "department_counts": [
                         {
                             "$group": {
@@ -270,9 +197,8 @@ async def get_developer(
 
         result = list(commits_col.aggregate(pipeline))[0]
 
-        return {
+        response = {
             "user_data": user_data,
-            "project_data": project_data,
 
             "stats": {
                 "departments": {
@@ -304,6 +230,12 @@ async def get_developer(
 
             "commit_history": result["commits"],
         }
+
+        # include project_data ONLY when scoped
+        if project:
+            response["project_data"] = project_data
+
+        return response
 
     except Exception as e:
         print(f"[ERROR] Error while getting developer data: {e}")
