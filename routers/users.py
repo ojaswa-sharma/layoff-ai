@@ -231,7 +231,6 @@ async def get_developer(
             "commit_history": result["commits"],
         }
 
-        # include project_data ONLY when scoped
         if project:
             response["project_data"] = project_data
 
