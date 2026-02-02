@@ -25,154 +25,122 @@ async def summarie_diff(openai:AsyncOpenAI, diff_text, name, mail, repo_name, co
     {repo_name}
     """
     system_prompt = """
-    <SYSTEM_PROMPT>
+<SYSTEM_PROMPT>
 
-    YOU ARE A SENIOR ENGINEERING MANAGER AND DELIVERY AUDITOR WITH DEEP EXPERIENCE IN FRONTEND, BACKEND, UI, AND DEVOPS TEAMS.
+YOU ARE A SENIOR ENGINEERING MANAGER AND DELIVERY AUDITOR WITH DEEP EXPERIENCE IN FRONTEND, BACKEND, UI, AND DEVOPS TEAMS.
 
-    YOUR TASK IS TO ANALYZE DEVELOPER COMMIT DESCRIPTIONS AND PRODUCE A STRICTLY STRUCTURED EVALUATION OF THE WORK PERFORMED.
+YOUR TASK IS TO ANALYZE DEVELOPER COMMIT DESCRIPTIONS AND PRODUCE A STRICTLY STRUCTURED EVALUATION OF THE WORK PERFORMED.
 
-    YOU MUST BE CRITICAL, OBJECTIVE, AND CONSISTENT.
+YOU MUST BE CRITICAL, OBJECTIVE, AND CONSISTENT.
 
-    ---
+---
 
-    ### CORE OBJECTIVE
+### CORE OBJECTIVE
 
-    FROM THE GIVEN COMMIT INFORMATION, DETERMINE:
+FROM THE GIVEN COMMIT INFORMATION, DETERMINE:
 
-    1. WHAT WORK WAS ACTUALLY DONE
-    2. WHETHER THE WORK IS REAL OR FAKE
-    3. WHICH ENGINEERING DEPARTMENT IT BELONGS TO
-    4. WHAT TYPE OF WORK IT IS
-    5. HOW WELL THE DEVELOPER PERFORMED
+1. WHAT WORK WAS ACTUALLY DONE
+2. WHETHER THE WORK IS REAL OR FAKE
+3. WHICH ENGINEERING DEPARTMENT IT BELONGS TO
+4. WHAT TYPE OF WORK IT IS
+5. HOW WELL THE DEVELOPER PERFORMED
 
-    ---
+---
 
-    ### OUTPUT FORMAT (MANDATORY)
+### OUTPUT FORMAT (MANDATORY)
 
-    YOU MUST OUTPUT **ONE AND ONLY ONE OBJECT** WITH THE FOLLOWING STRUCTURE:
+YOU MUST OUTPUT ONE AND ONLY ONE OBJECT WITH THE FOLLOWING STRUCTURE:
 
-    CommitDetails:
-    - commit_summary : STRING
-    - work_category : ONE OF ["real", "fake"]
-    - department : ONE OF ["ui", "frontend", "backend", "devops"]
-    - commiters_performance : STRING
-    - work_type : ONE OF ["major_features", "minor_features", "ui_bugs", "functional_bugs", "tech_debt", "other"]
+CommitDetails:
+- commit_summary : STRING
+- work_category : ONE OF ["real", "fake"]
+- department : ONE OF ["ui", "frontend", "backend", "devops"]
+- commiters_performance : STRING
+- work_type : ONE OF ["major_features", "minor_features", "ui_bugs", "functional_bugs", "tech_debt", "other"]
 
-    DO NOT ADD EXTRA FIELDS  
-    DO NOT CHANGE FIELD NAMES  
-    DO NOT WRAP THE OUTPUT IN MARKDOWN  
-    DO NOT OUTPUT ANY TEXT OUTSIDE THIS STRUCTURE  
+DO NOT ADD EXTRA FIELDS  
+DO NOT CHANGE FIELD NAMES  
+DO NOT WRAP THE OUTPUT IN MARKDOWN  
+DO NOT OUTPUT ANY TEXT OUTSIDE THIS STRUCTURE  
 
-    ---
+---
 
-    ### ENUM DEFINITIONS (CRITICAL — FOLLOW EXACTLY)
+### CONTENT LENGTH RULES (CRITICAL)
 
-    #### WORK CATEGORY
-    - "real" → MEANINGFUL, NECESSARY, OR IMPACTFUL ENGINEERING WORK
-    - "fake" → COSMETIC, TRIVIAL, REDUNDANT, OR OVERSTATED WORK WITH LOW VALUE
+- commit_summary MUST BE A CONCISE PARAGRAPH OF 2–3 SENTENCES
+- commiters_performance MUST BE A CONCISE PARAGRAPH OF 2–3 SENTENCES
+- TEXT MUST BE DETAILED BUT NOT VERBOSE
+- TEXT MUST NOT BE OVER 400 CHARACTERS
+- DO NOT USE FILLER, GENERIC PRAISE, OR REPETITIVE LANGUAGE
 
-    #### DEPARTMENT
-    - "ui" → STYLING, LAYOUT, VISUAL ELEMENTS, DESIGN SYSTEMS
-    - "frontend" → CLIENT-SIDE LOGIC, STATE MANAGEMENT, USER FLOWS
-    - "backend" → APIS, DATABASES, BUSINESS LOGIC, SERVICES
-    - "devops" → CI/CD, INFRASTRUCTURE, DEPLOYMENTS, MONITORING
+---
 
-    #### WORK TYPE
-    - "major_features" → LARGE, CORE FUNCTIONALITY OR SYSTEM CHANGES
-    - "minor_features" → SMALL ADDITIONS OR INCREMENTAL ENHANCEMENTS
-    - "ui_bugs" → VISUAL, CSS, LAYOUT, OR RESPONSIVENESS BUGS
-    - "functional_bugs" → BROKEN LOGIC, ERRORS, CRASHES, INCORRECT BEHAVIOR
-    - "tech_debt" → REFACTORING, CLEANUP, PERFORMANCE, TESTS
-    - "other" → DOES NOT CLEARLY MATCH THE ABOVE TYPES
+### ENUM DEFINITIONS (CRITICAL — FOLLOW EXACTLY)
 
-    ---
+[UNCHANGED — SAME AS YOUR ORIGINAL]
 
-    ### CHAIN OF THOUGHTS (INTERNAL — MUST FOLLOW STRICTLY)
+---
 
-    1. UNDERSTAND  
-    READ THE COMMIT MESSAGE AND IDENTIFY THE ACTUAL CHANGE
+### CHAIN OF THOUGHTS (INTERNAL — MUST FOLLOW STRICTLY)
 
-    2. BASICS  
-    IDENTIFY WHICH PART OF THE SYSTEM WAS TOUCHED (UI / FE / BE / DEVOPS)
+1. UNDERSTAND  
+READ THE COMMIT MESSAGE AND IDENTIFY THE ACTUAL CHANGES MADE
 
-    3. BREAK DOWN  
-    DETERMINE WHETHER THIS IS FEATURE WORK, BUG FIXING, OR TECH DEBT
+2. BASICS  
+IDENTIFY WHICH PART OF THE SYSTEM WAS TOUCHED (UI / FRONTEND / BACKEND / DEVOPS)
 
-    4. ANALYZE  
-    ASSESS IMPACT VS NOISE — IS THIS SUBSTANTIVE OR COSMETIC?
+3. BREAK DOWN  
+CLASSIFY THE WORK AS FEATURE DEVELOPMENT, BUG FIXING, OR TECH DEBT
 
-    5. BUILD  
-    WRITE A CLEAR, ONE-SENTENCE COMMIT SUMMARY
+4. ANALYZE  
+EVALUATE THE TRUE ENGINEERING IMPACT VS COSMETIC OR INFLATED CHANGES
 
-    6. EDGE CASES  
-    IF THE COMMIT IS VAGUE, INFLATED, OR LOW IMPACT → MARK AS "fake"
+5. BUILD  
+WRITE A CLEAR, MULTI-SENTENCE COMMIT SUMMARY THAT EXPLAINS:
+- WHAT WAS CHANGED
+- WHY IT WAS DONE
+- WHAT IMPACT IT HAS
 
-    7. FINAL ANSWER  
-    OUTPUT THE STRUCTURED OBJECT ONLY
+6. EDGE CASES  
+IF THE COMMIT IS VAGUE, LOW-IMPACT, OR OVERSTATED → MARK AS "fake"
 
-    ---
+7. FINAL ANSWER  
+OUTPUT THE STRUCTURED OBJECT ONLY
 
-    ### COMMITTER PERFORMANCE RULES
+---
 
-    - BE DIRECT AND PROFESSIONAL
-    - EVALUATE ENGINEERING VALUE AND CLARITY
-    - DO NOT PRAISE LOW-IMPACT OR COSMETIC WORK
+### COMMITTER PERFORMANCE RULES
 
-    EXAMPLES OF PERFORMANCE TEXT:
-    - "Strong contribution addressing a meaningful backend issue."
-    - "Minor UI change with limited engineering impact."
-    - "Low-value refactor presented as significant work."
+- WRITE A PROFESSIONAL, DETAILED PERFORMANCE ASSESSMENT
+- EVALUATE TECHNICAL VALUE, EXECUTION QUALITY, AND CLARITY
+- COMMENT ON WHETHER THE WORK MATCHES ITS IMPLIED IMPORTANCE
+- DO NOT PRAISE COSMETIC OR TRIVIAL CHANGES
 
-    ---
+THE PERFORMANCE TEXT SHOULD READ LIKE A MANAGERIAL REVIEW NOTE, NOT A SUMMARY.
 
-    ### FEW-SHOT EXAMPLES
+---
 
-    INPUT:
-    "Fix broken API response when user session expires"
+### WHAT NOT TO DO (NEGATIVE PROMPT)
 
-    OUTPUT:
-    CommitDetails:
-    - commit_summary: "Fixed API response handling for expired user sessions"
-    - work_category: "real"
-    - department: "backend"
-    - commiters_performance: "Clear and valuable fix resolving a real functional bug."
-    - work_type: "functional_bugs"
+NEVER DO THE FOLLOWING:
+- NEVER WRITE SINGLE-SENTENCE SUMMARIES
+- NEVER USE GENERIC PRAISE LIKE "GOOD JOB" OR "WELL DONE"
+- NEVER PAD TEXT WITH FLUFF OR MANAGEMENT BUZZWORDS
+- NEVER EXAGGERATE THE IMPORTANCE OF SMALL CHANGES
+- NEVER INVENT WORK NOT PRESENT IN THE COMMIT
+- NEVER OUTPUT TEXT OUTSIDE THE STRUCTURED OBJECT
+- NEVER EXPLAIN YOUR REASONING
+- NEVER OUTPUT MULTIPLE OBJECTS
 
-    ---
+STRICT COMPLIANCE IS REQUIRED AT ALL TIMES.
 
-    INPUT:
-    "Adjusted button colors and spacing"
-
-    OUTPUT:
-    CommitDetails:
-    - commit_summary: "Adjusted button colors and spacing"
-    - work_category: "fake"
-    - department: "ui"
-    - commiters_performance: "Cosmetic UI change with minimal functional value."
-    - work_type: "ui_bugs"
-
-    ---
-
-    ### WHAT NOT TO DO (NEGATIVE PROMPT)
-
-    NEVER DO THE FOLLOWING:
-    - NEVER OUTPUT TEXT OUTSIDE THE STRUCTURED OBJECT
-    - NEVER INVENT WORK THAT IS NOT PRESENT IN THE COMMIT
-    - NEVER USE ENUM VALUES OUTSIDE THE DEFINED LISTS
-    - NEVER CLASSIFY COSMETIC WORK AS MAJOR FEATURES
-    - NEVER BE OVERLY GENEROUS IN PERFORMANCE EVALUATION
-    - NEVER ASK QUESTIONS OR REQUEST MORE INFORMATION
-    - NEVER OUTPUT MULTIPLE OBJECTS
-    - NEVER EXPLAIN YOUR REASONING
-
-    STRICT COMPLIANCE IS REQUIRED AT ALL TIMES.
-
-    </SYSTEM_PROMPT>
+</SYSTEM_PROMPT>
 
     """
 
     resp = await openai.responses.parse(
         model="gpt-5-nano",
+        reasoning={"effort" : "minimal"},
         input=[
             {"role": "system", "content": system_prompt},
             {
@@ -191,31 +159,26 @@ async def summarie_diff(openai:AsyncOpenAI, diff_text, name, mail, repo_name, co
         "work_type" : resp.output_parsed.work_type.value
     }
 
-async def summarize_and_upload(diff_text, name, mail, repo_name, commit_title, db):
+async def summarize_and_upload(diff_text, name, mail, repo_name, commit_title, db, commit_hash = None):
     diff = await summarie_diff(get_openai(), diff_text, name, mail, repo_name, commit_title)
     diff["mail"] = mail
     diff["repo_name"] = repo_name
+    diff["commit_hash"] = commit_hash
     zep = get_personalizer()
-    msg = botMessage(role = "user", content=f"""
-        # Commit summary:
-            {diff.get("commit_summmary")}
+    msg = botMessage(role="norole", content=f"""
+Repository: {repo_name}
+Developer: {name}
+Commit hash : {commit_hash}
 
-        #Work Category:
-            {diff.get("work_category")}
+Commit Summary:
+{diff.get("commit_summmary")}
 
-        # Department:
-            {diff.get("department")}
-
-        # Commiter's performance:
-            {diff.get("commiters_performance")}
-
-        # Work Type:
-            {diff.get("work_type")}
-
-        # Diff:
-            {diff_text}
-        """)
-    await asyncio.gather(zep.add_message(user_id = f"user_{mail}", message=msg, thread_id=repo_name, first_name=name),
-                         asyncio.to_thread(db.commit_summary.insert_one,diff)
+Performance Assessment:
+{diff.get("commiters_performance")}
+""")
+    print(f"[DEBUG] Extraction successful, moving to db and zep")
+    await asyncio.gather(zep.add_message(user_id = f"user_{mail}", message=msg, thread_id=repo_name, first_name=name, email=mail, repo_name=repo_name),
+                         asyncio.to_thread(db.commit_summary.insert_one,diff),
+                         zep.add_to_graph(graph_id=f"{mail}_{repo_name}", message=msg.content)
                          )
 

@@ -7,7 +7,9 @@ from collections import deque
 from dataclasses import dataclass
 
 from zep_cloud.client import AsyncZep
-from zep_cloud.types import Message, UserInstruction
+from zep_cloud.types import Message, UserInstruction, FactRatingInstruction
+from zep_cloud import EntityEdgeSourceTarget
+from models.zep_ontology import Repository, RepositoryContainsBug, RepositoryContainsFeature, Feature, FeatureRealizedByCommit, Bug, BugAddressedByCommit, Commit, Positives, Negatives, Changes, Developer
 
 @dataclass(frozen=True)
 class botMessage:
@@ -116,132 +118,133 @@ class ZepPersonalizer():
 
         self.loop_running = False
 
-
-    async def check_bg(self):
-        if not self.loop_running:
-            self.loop_running = True
-            asyncio.create_task(self.background_task())
-            try:
-                await self.zep_conn.user.add_user_summary_instructions(
-                    instructions=[
-                        UserInstruction(
-                            name="engineering_focus_and_strengths",
-                            text=(
-                                "Extract information about the developer's primary engineering focus, "
-                                "including dominant departments (ui, frontend, backend, devops), "
-                                "types of work they most frequently perform, and areas of technical strength."
-                            ),
-                        ),
-                        UserInstruction(
-                            name="contribution_quality_and_impact",
-                            text=(
-                                "Capture patterns related to the quality and impact of the developer's contributions, "
-                                "including frequency of real vs fake work, delivery of major features, "
-                                "handling of critical bugs, and tendency toward low-impact or cosmetic changes."
-                            ),
-                        ),
-                        UserInstruction(
-                            name="work_style_and_delivery_patterns",
-                            text=(
-                                "Capture the developer's work style and delivery behavior, such as consistency of output, "
-                                "preference for features vs bug fixes vs tech debt, clarity of commits, "
-                                "and recurring contribution patterns over time."
-                            )
-                        )
-                    ]
-                )
-            except Exception as e:
-                print(f"[DEBUG] Error adding user instructions: {e}")
-    
-
-
-    async def background_task(self):
-        while self.loop_running:
-            curr = None
-            async with self.lock:
-                if self.tasks:
-                    curr = self.tasks.popleft()
-                    print(curr)
-            if curr:
-                if curr.data_type == 'message':
-                    try:
-                        user_id, thread_id, message, first_name, last_name = curr.decompose()
-                        await self.add_message(user_id, message, thread_id, first_name, last_name)
-                    except Exception as e:
-                        print(f'[DEBUG] Error while processing task: {e}')
-                    finally:
-                        await asyncio.sleep(0.1)
-                elif curr.data_type == 'fact':
-                    try:
-                        user_id, thread_id, message, first_name, last_name = curr.decompose()
-                        await self.add_fact(user_id, message, first_name, last_name)
-                    except Exception as e:
-                        print(f'[DEBUG] Error while processing fact: {e}')
-                    finally:
-                        await asyncio.sleep(0.1)
-            else:
-                await asyncio.sleep(1)
-
-
-    async def upsert_user(self, user_id, first_name = None, last_name = None):
+    async def upsert_user(self, user_id=None, first_name = None, last_name = None, email = None, graph_id = None):
         try:
-            existing = await self.zep_conn.user.get(user_id = user_id)
-        except:
-            data = {"user_id" : user_id}
+            if user_id:
+                existing = await self.zep_conn.user.get(user_id = user_id)
+            if graph_id:
+                existing = await self.zep_conn.graph.get(graph_id=graph_id)
+            print(f"[DEBUG] User already exists")
+        except Exception as e:
+            print("Creating")
+            if user_id:
+                data = {"user_id" : user_id}
             if first_name:
                 data['first_name'] = first_name.split()[0] if first_name.split() else first_name
             if last_name:
                 data['last_name'] = last_name.split()[0] if last_name.split() else last_name
+            if email:
+                data['email'] = email
 
+            if user_id:
+                # await self.zep_conn.user.add(**data)
+                await self.zep_conn.user.add(user_id=user_id, fact_rating_instruction=FactRatingInstruction(instruction=self.user_summary_instruction))
 
-            await self.zep_conn.user.add(**data)
+                await self.zep_conn.graph.set_ontology(
+                entities={
+                    "Repository": Repository,
+                    "Bug": Bug,
+                    "Feature": Feature,
+                    "Commit": Commit,
+                    "Changes" : Changes,
+                    "Positives" : Positives,
+                    "Negatives" : Negatives,
+                },
+                edges={
+                    "REPOSITORY_CONTAINS_BUG": (
+                        RepositoryContainsBug,
+                        [EntityEdgeSourceTarget(source="Repository", target="Bug")],
+                    ),
+                    "REPOSITORY_CONTAINS_FEATURE": (
+                        RepositoryContainsFeature,
+                        [EntityEdgeSourceTarget(source="Repository", target="Feature")],
+                    ),
+                    "BUG_ADDRESSED_BY_COMMIT": (
+                        BugAddressedByCommit,
+                        [EntityEdgeSourceTarget(source="Bug", target="Commit")],
+                    ),
+                    "FEATURE_REALIZED_BY_COMMIT": (
+                        FeatureRealizedByCommit,
+                        [EntityEdgeSourceTarget(source="Feature", target="Commit")],
+                    ),
+                },
+                user_ids=[user_id]
+            )
 
-    async def add_messages(self, user_id, messages, thread_id, first_name = "", last_name = ""):
-        await self.upsert_user(user_id, first_name, last_name)
+            if graph_id:
+            #     await self.zep_conn.graph.create(graph_id, fact_rating_instruction=[
+            #     FactRatingInstruction(
+            #         instruction=(
+            #             "Extract information about the developer's primary engineering focus, "
+            #             "including dominant departments (ui, frontend, backend, devops), "
+            #             "types of work they most frequently perform, and areas of technical strength."
+            #         )
+            #     ),
+            #     FactRatingInstruction(
+            #         instruction=(
+            #             "Capture patterns related to the quality and impact of the developer's contributions, "
+            #             "including frequency of real vs fake work, delivery of major features, "
+            #             "handling of critical bugs, and tendency toward low-impact or cosmetic changes."
+            #         )
+            #     ),
+            #     FactRatingInstruction(
+            #         instruction=(
+            #             "Capture the developer's work style and delivery behavior, such as consistency of output, "
+            #             "preference for features vs bug fixes vs tech debt, clarity of commits, "
+            #             "and recurring contribution patterns over time."
+            #         )
+            #     )
+            # ])
+                await self.zep_conn.graph.create(graph_id=graph_id, fact_rating_instruction=FactRatingInstruction(instruction=self.user_summary_instruction))
+
+                await self.zep_conn.graph.set_ontology(
+                entities={
+                    "Repository": Repository,
+                    "Bug": Bug,
+                    "Feature": Feature,
+                    "Commit": Commit,
+                    "Changes" : Changes,
+                    "Positives" : Positives,
+                    "Negatives" : Negatives
+                },
+                edges={
+                    "REPOSITORY_CONTAINS_BUG": (
+                        RepositoryContainsBug,
+                        [EntityEdgeSourceTarget(source="Repository", target="Bug")],
+                    ),
+                    "REPOSITORY_CONTAINS_FEATURE": (
+                        RepositoryContainsFeature,
+                        [EntityEdgeSourceTarget(source="Repository", target="Feature")],
+                    ),
+                    "BUG_ADDRESSED_BY_COMMIT": (
+                        BugAddressedByCommit,
+                        [EntityEdgeSourceTarget(source="Bug", target="Commit")],
+                    ),
+                    "FEATURE_REALIZED_BY_COMMIT": (
+                        FeatureRealizedByCommit,
+                        [EntityEdgeSourceTarget(source="Feature", target="Commit")],
+                    ),
+                },
+                graph_ids=[graph_id]
+            )
+
+    async def add_message(self, user_id, message, thread_id, first_name = "", last_name = "", repo_name = None, email = None):
+        await self.upsert_user(user_id, first_name, last_name, email)
 
         thread_id = str(thread_id)
-        # V3 MIGRATION: thread.get instead of deprecated session methods
-        try:
-            thread = await self.zep_conn.thread.get(thread_id)
-        except:
-            thread = None
-            
-        if not thread:
-            # V3 MIGRATION: thread.create instead of memory.add_session
-            await self.zep_conn.thread.create(thread_id=thread_id, user_id=user_id)
-
-        message_list = []
-        for message in messages:
-            text = message.content[0].get('text') if not isinstance(message, str) else message
-            curr = Message(role = str(message.role), content = str(text))
-            if message.role == "user":
-                message_list.append(curr)
-
-        if message_list:
-            await self.zep_conn.thread.add_messages(thread_id=thread_id, messages=message_list)
-
-        return {"status" : "success"}    
-
-    async def add_message(self, user_id, message, thread_id, first_name = "", last_name = ""):
-        await self.upsert_user(user_id, first_name, last_name)
-
-        thread_id = str(thread_id)
-        try:
-            thread = await self.zep_conn.thread.get(thread_id)
-            print(f'[DEBUG] Thread : {thread}')
-        except:
-            thread = None
-
-        if not thread:
-            await self.zep_conn.thread.create(thread_id=thread_id, user_id=user_id)
-
-        # text = message.content[0].get('text')
         text = message.content
-        curr = Message(role = str(message.role), content = str(text))
-        
-        await self.zep_conn.thread.add_messages(thread_id=thread_id, messages=[curr])
+        await self.zep_conn.graph.add(user_id=user_id, data = text[:min(len(text), 9999)], type="text", source_description="Data from github summarized by ai")
 
         return {"status" : "success"} 
+
+    async def add_to_graph(self, graph_id, message):
+        await self.upsert_user(graph_id=graph_id)
+        await self.zep_conn.graph.add(
+            data = message[:min(len(message), 9999)],
+            graph_id=graph_id,
+            source_description="Data from github summarized by ai",
+            type="text",
+        )
 
     async def add_fact(self, user_id, message, first_name = "", last_name = ""):
         await self.upsert_user(user_id, first_name, last_name)
@@ -250,7 +253,6 @@ class ZepPersonalizer():
             fact_text, fact_type = message.fact, message.fact_type
             print('[DEBUGGGG] STARTED')
             
-            # V3 MIGRATION: graph.add still works the same way for user graphs
             await self.zep_conn.graph.add(
                 data = fact_text[:min(len(fact_text), 9999)],
                 type= fact_type,
@@ -264,18 +266,9 @@ class ZepPersonalizer():
 
 
     async def get_context(self, user_id, query = None, top_n = 3):
-        await self.check_bg()
-        
-        # V3 MIGRATION: Use thread.get_user_context for better context retrieval
-        # This replaces memory.search and provides structured, relevant facts
-        # Note: You'll need a thread_id to use get_user_context
-        # If you don't have a specific thread, use graph.search instead
-        
         if not query:
             query = "tell me about my preferences"
         try:
-            # V3 MIGRATION: graph.search replaces memory.search_sessions
-            # Note: min_score parameter is deprecated, removed from call
             fact_objs = await self.zep_conn.graph.search(
                 query = query, 
                 user_id = user_id, 
@@ -283,13 +276,10 @@ class ZepPersonalizer():
             )
             facts = []
             
-            # V3 MIGRATION: Results still have nodes with score and summary
             for edge in fact_objs.nodes:
                 facts.append((edge.score, edge.summary))      
                 print(f"{edge.score} : {edge.summary}")      
             
-            # Sort by score (descending) and take top N facts
-            # V3 note: You can manually filter by score if needed, but min_score param is gone
             facts.sort(key=lambda x: x[0], reverse=True)
             top_facts = [fact[1] for fact in facts[:top_n]]
             
@@ -297,47 +287,71 @@ class ZepPersonalizer():
         except Exception as e:
             print(f"[ERROR] Error getting context: {e}")
             return ""
-
-    async def get_context_with_thread(self, user_id, thread_id, query = None):
-        """
-        V3 MIGRATION: New method using thread.get_user_context
-        This is the recommended way to get context in V3 when you have a thread_id
-        Returns structured context with user summary and relevant facts
-        """
-        await self.check_bg()
-        
+    
+    async def get_project_data(self, graph_id, query = None):
+        if not query:
+            query = "What work was done by the developer, the bugs created, and the changes, as well as the positives and negatives"
         try:
-            # V3 MIGRATION: thread.get_user_context replaces memory.get and provides
-            # structured context (no mode parameter needed)
-            context = await self.zep_conn.thread.get_user_context(
-                thread_id=thread_id,
-                query=query  # Optional query to focus context retrieval
+            data = await self.zep_conn.graph.search(
+                query=query,
+                graph_id=graph_id,
+                scope="nodes",
+                search_filters={
+                    "node_labels": [
+                        "Bug",
+                        "Positives",
+                        "Negatives",
+                        "Changes",
+                        "Commit",
+                    ]
+                },
+                limit=20
             )
-            
-            return context
+
+            nodes = []
+            for edge in data.nodes:
+                print(edge.labels)
+                # print(edge.summary)
+                # print(edge.attributes)
+                if "Positives" in edge.labels:
+                    nodes.append({
+                        "type" : "POSITVE",
+                        "summary" : edge.summary,
+                        "attributes" : edge.attributes
+                    })
+                elif "Commit" in edge.labels:
+                    nodes.append({
+                        "type" : "COMMIT",
+                        "summary" : edge.summary,
+                        "attributes" : edge.attributes
+                    })
+                elif "Bug" in edge.labels:
+                    nodes.append({
+                        "type" : "BUG",
+                        "summary" : edge.summary,
+                        "attributes" : edge.attributes
+                    })
+                elif "Changes" in edge.labels:
+                    nodes.append({
+                        "type" : "CHANGES",
+                        "summary" : edge.summary,
+                        "attributes" : edge.attributes
+                    })
+                elif "Negatives" in edge.labels:
+                    nodes.append({
+                        "type" : "NEGATIVES",
+                        "summary" : edge.summary,
+                        "attributes" : edge.attributes
+                    })
+
+
+
+            return nodes
         except Exception as e:
-            print(f"[ERROR] Error getting thread context: {e}")
-            return None
-
-
-    async def add_task(self, task):
-        await self.check_bg()
-        async with self.lock:
-            self.tasks.append(task)
+            print(f"[ERROR] Error while getting nodes : {e}")
 
 
     async def get_user_persona(self, user_id):
-        """
-        Get user persona summary from Zep user node.
-        
-        V3 MIGRATION: user.get_node still works the same way
-        
-        Args:
-            user_id (str): The user ID to get persona for
-            
-        Returns:
-            str: The summary field from the user node, or empty string if not found
-        """
         try:
             print(f"[DEBUG] Getting persona for user_id: {user_id}")
             user_node = await self.zep_conn.user.get_node(user_id=user_id)
@@ -356,36 +370,3 @@ class ZepPersonalizer():
             import traceback
             traceback.print_exc()
             return ""
-
-    async def get_user_threads(self, user_id):
-        """
-        V3 MIGRATION: New method to get all threads for a user
-        Replaces user.get_sessions
-        
-        Args:
-            user_id (str): The user ID to get threads for
-            
-        Returns:
-            list: List of thread objects
-        """
-        try:
-            threads = await self.zep_conn.user.get_threads(user_id=user_id)
-            return threads
-        except Exception as e:
-            print(f"[ERROR] Error getting user threads: {e}")
-            return []
-
-    async def delete_thread(self, thread_id):
-        """
-        V3 MIGRATION: New method to delete a thread
-        Replaces memory.delete
-        
-        Args:
-            thread_id (str): The thread ID to delete
-        """
-        try:
-            await self.zep_conn.thread.delete(thread_id=thread_id)
-            return {"status": "success"}
-        except Exception as e:
-            print(f"[ERROR] Error deleting thread: {e}")
-            return {"status": "error", "message": str(e)}

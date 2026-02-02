@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Request, Depends, HTTPException
 from models.commits import Commit
 from typing import List
-from services.git_diff import fetch_diff_from_webhook
+from services.git_diff import fetch_diff_from_webhook, count_diff_stats
 import os
 from services.db import get_mongo_db
 from services.ai_service import summarize_and_upload
@@ -43,20 +43,21 @@ async def webhook_github(request: Request, mongo=Depends(get_mongo_db)):
                 repository_name=request_data["repository"]["name"],
                 repository_url=request_data["repository"]["html_url"],
                 diff=diff_text,
-                installation_id=installation_id
+                installation_id=installation_id,
+                changes=count_diff_stats(diff_text=diff_text)
             )
             collected.append(commit_model.model_dump())
-        
+            asyncio.create_task(summarize_and_upload(diff_text,
+                                            commit["author"]["name"],
+                                            commit["author"]["email"],
+                                            request_data["repository"]["name"],
+                                            commit["message"],
+                                            mongo,
+                                            commit_hash=commit_hash
+                                            ))
+
         if collected:
             mongo.commits.insert_many(collected)
-            asyncio.create_task(summarize_and_upload(diff_text,
-                                                     commit["author"]["name"],
-                                                     commit["author"]["email"],
-                                                     request_data["repository"]["name"],
-                                                     commit["message"],
-                                                     mongo
-                                                     ))
-
 
         return {
             "message": "Webhook processed successfully", 
