@@ -8,7 +8,7 @@ from services.zep_store import get_personalizer
 router = APIRouter(prefix='/v1/users')
 
 @router.get('/')
-async def list_users(db = Depends(get_mongo_db)):
+async def list_users(db = Depends(get_mongo_db), page = 1, limit = 10):
     try:
         commits_collection = db['commits']
 
@@ -84,7 +84,7 @@ async def list_users(db = Depends(get_mongo_db)):
         return {"error": str(e)}
 
 
-@router.get('/developer/{email}')
+@router.get("/developer/{email}")
 async def get_developer(
     email: str,
     project: str | None = None,
@@ -99,35 +99,116 @@ async def get_developer(
             user_id=f"user_{email}"
         )
 
-        project_data = None
-        if project:
-            project_data = await personalizer.get_project_data(
-                graph_id=f"{email}_{project}"
-            )
-
         commits_col = db["commits"]
-        summaries_col = db["commit_summary"]
 
-        match_stage = {
-            "email": email
-        }
-        if project:
-            match_stage["repository_name"] = project
+        # ------------------------------------------------------------------
+        # CASE 1: NO PROJECT → repo-level summary
+        # ------------------------------------------------------------------
+        if not project:
+            pipeline = [
+                {"$match": {"email": email}},
+
+                {
+                    "$lookup": {
+                        "from": "commit_summary",
+                        "localField": "commit_hash",
+                        "foreignField": "commit_hash",
+                        "as": "summary",
+                    }
+                },
+                {
+                    "$unwind": {
+                        "path": "$summary",
+                        "preserveNullAndEmptyArrays": True,
+                    }
+                },
+
+                {"$sort": {"date": -1}},
+
+                {
+                    "$group": {
+                        "_id": "$repository_name",
+
+                        "last_commit_hash": {"$first": "$commit_hash"},
+                        "last_commit_title": {"$first": "$message"},
+                        "last_commit_date": {"$first": "$date"},
+
+                        "department": {"$first": "$summary.department"},
+                        "work_type": {"$first": "$summary.work_type"},
+                        "work_category": {"$first": "$summary.work_category"},
+                        "performance": {"$first": "$summary.commiters_performance"},
+                        "commit_summary": {"$first": "$summary.commit_summmary"},
+
+                        "additions": {"$first": "$changes.additions"},
+                        "deletions": {"$first": "$changes.deletions"},
+                    }
+                },
+
+                {"$sort": {"last_commit_date": -1}},
+
+                {
+                    "$project": {
+                        "_id": 0,
+                        "repository_name": "$_id",
+                        "last_commit": {
+                            "commit_hash": "$last_commit_hash",
+                            "title": "$last_commit_title",
+                            "date": "$last_commit_date",
+                            "additions": "$additions",
+                            "deletions": "$deletions",
+                        },
+                        "summary": {
+                            "department": "$department",
+                            "work_type": "$work_type",
+                            "work_category": "$work_category",
+                            "performance": "$performance",
+                            "commit_summary": "$commit_summary",
+                        },
+                    }
+                },
+            ]
+
+            repos = list(commits_col.aggregate(pipeline))
+
+            return {
+                "user_data": user_data,
+                "stats": {
+                    "total_projects": len(repos),
+                },
+                "repositories": repos,
+            }
+
+        # ------------------------------------------------------------------
+        # CASE 2: PROJECT PROVIDED → commit-level detail (existing behavior)
+        # ------------------------------------------------------------------
+        project_data = await personalizer.get_project_data(
+            graph_id=f"{email}_{project}"
+        )
 
         skip = (page - 1) * limit
 
         pipeline = [
-            {"$match": match_stage},
+            {
+                "$match": {
+                    "email": email,
+                    "repository_name": project,
+                }
+            },
 
             {
                 "$lookup": {
                     "from": "commit_summary",
                     "localField": "commit_hash",
                     "foreignField": "commit_hash",
-                    "as": "summary"
+                    "as": "summary",
                 }
             },
-            {"$unwind": {"path": "$summary", "preserveNullAndEmptyArrays": True}},
+            {
+                "$unwind": {
+                    "path": "$summary",
+                    "preserveNullAndEmptyArrays": True,
+                }
+            },
 
             {
                 "$facet": {
@@ -148,16 +229,16 @@ async def get_developer(
                                 "performance": "$summary.commiters_performance",
                                 "additions": "$changes.additions",
                                 "deletions": "$changes.deletions",
-                                "commit_summary" : "$summary.commit_summmary"
+                                "commit_summary": "$summary.commit_summmary",
                             }
-                        }
+                        },
                     ],
 
                     "department_counts": [
                         {
                             "$group": {
                                 "_id": "$summary.department",
-                                "count": {"$sum": 1}
+                                "count": {"$sum": 1},
                             }
                         }
                     ],
@@ -166,7 +247,7 @@ async def get_developer(
                         {
                             "$group": {
                                 "_id": "$summary.work_type",
-                                "count": {"$sum": 1}
+                                "count": {"$sum": 1},
                             }
                         }
                     ],
@@ -175,16 +256,16 @@ async def get_developer(
                         {
                             "$group": {
                                 "_id": "$summary.work_category",
-                                "count": {"$sum": 1}
+                                "count": {"$sum": 1},
                             }
                         }
                     ],
 
                     "total_commits": [
                         {"$count": "count"}
-                    ]
+                    ],
                 }
-            }
+            },
         ]
 
         result = list(commits_col.aggregate(pipeline))[0]
@@ -196,28 +277,32 @@ async def get_developer(
             "stats": {
                 "departments": {
                     d["_id"]: d["count"]
-                    for d in result["department_counts"] if d["_id"]
+                    for d in result["department_counts"]
+                    if d["_id"]
                 },
                 "work_types": {
                     w["_id"]: w["count"]
-                    for w in result["work_type_counts"] if w["_id"]
+                    for w in result["work_type_counts"]
+                    if w["_id"]
                 },
                 "real_vs_fake": {
                     r["_id"]: r["count"]
-                    for r in result["real_vs_fake"] if r["_id"]
+                    for r in result["real_vs_fake"]
+                    if r["_id"]
                 },
                 "total_commits": (
                     result["total_commits"][0]["count"]
-                    if result["total_commits"] else 0
-                )
+                    if result["total_commits"]
+                    else 0
+                ),
             },
 
             "pagination": {
                 "page": page,
-                "limit": limit
+                "limit": limit,
             },
 
-            "commit_history": result["commits"]
+            "commit_history": result["commits"],
         }
 
     except Exception as e:
