@@ -60,7 +60,8 @@ async def list_users(db = Depends(get_mongo_db)):
                     "changes" : {
                         "additions" : 0,
                         "deletions" : 0
-                    }
+                    },
+                    "status" : "inactive"
                 }
 
             users_data[email]["repos"].append({
@@ -72,6 +73,10 @@ async def list_users(db = Depends(get_mongo_db)):
             })
             users_data[email]["changes"]["additions"] += doc["total_additions"]
             users_data[email]["changes"]["deletions"] += doc["total_deletions"]
+            if users_data[email]["status"] == "inactive":
+                users_data[email]["status"] = status
+            elif users_data[email]["status"] == "idle" and status == "active":
+                users_data[email]["status"] = status
 
         return list(users_data.values())
 
