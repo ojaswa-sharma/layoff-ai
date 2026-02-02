@@ -8,3 +8,5 @@ async def hook_bitbucket(
     request : Request
 ):
     print(await request.json())
+
+    print("Webhook received")
