@@ -28,3 +28,6 @@ app.add_middleware(
 
 for _router in _all:
     app.include_router(_router)
+
+
+print("App started")
