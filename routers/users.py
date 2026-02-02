@@ -56,16 +56,22 @@ async def list_users(db = Depends(get_mongo_db)):
             if email not in users_data:
                 users_data[email] = {
                     "email": email,
-                    "repos": []
+                    "repos": [],
+                    "changes" : {
+                        "additions" : 0,
+                        "deletions" : 0
+                    }
                 }
 
             users_data[email]["repos"].append({
                 "repo_name": repo_name,
                 "last_commit": last_commit,
-                "total_additions": doc["total_additions"],
-                "total_deletions": doc["total_deletions"],
-                "activity_status": status
+                "repo_additions": doc["total_additions"],
+                "repo_deletions": doc["total_deletions"],
+                "activity_status": status,
             })
+            users_data[email]["changes"]["additions"] += doc["total_additions"]
+            users_data[email]["changes"]["deletions"] += doc["total_deletions"]
 
         return list(users_data.values())
 
