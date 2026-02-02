@@ -150,7 +150,7 @@ STRICT COMPLIANCE IS REQUIRED AT ALL TIMES.
         ],
         text_format=CommitDetails,
     )
-    print(resp.usage)
+    # print(resp.usage)
     return {
         "commit_summmary" : resp.output_parsed.commit_summary,
         "work_category" : resp.output_parsed.work_category.value,
