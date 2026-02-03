@@ -7,78 +7,101 @@ from services.zep_store import get_personalizer
 
 router = APIRouter(prefix='/v1/users')
 
-@router.get('/')
-async def list_users(db = Depends(get_mongo_db), page = 1, limit = 10):
+@router.get("/")
+async def list_users(db=Depends(get_mongo_db), page=1, limit=10):
     try:
-        commits_collection = db['commits']
+        commits_collection = db["commits"]
 
         pipeline = [
+            # 1️⃣ Repo-level aggregation
             {
                 "$group": {
                     "_id": {
                         "email": "$email",
                         "repo_name": "$repository_name"
                     },
-                    "last_commit_date": {"$max": "$date"},
-                    "total_additions": {"$sum": "$changes.additions"},
-                    "total_deletions": {"$sum": "$changes.deletions"},
-                    "commit_count": {"$sum": 1}
+                    "last_commit": {"$max": "$date"},
+                    "repo_additions": {"$sum": "$changes.additions"},
+                    "repo_deletions": {"$sum": "$changes.deletions"},
+                    "repo_commits": {"$sum": 1}
+                }
+            },
+            # 2️⃣ User-level aggregation (THIS is the key optimization)
+            {
+                "$group": {
+                    "_id": "$_id.email",
+                    "repos": {
+                        "$push": {
+                            "repo_name": "$_id.repo_name",
+                            "last_commit": "$last_commit",
+                            "repo_additions": "$repo_additions",
+                            "repo_deletions": "$repo_deletions",
+                            "repo_commits": "$repo_commits"
+                        }
+                    },
+                    "total_additions": {"$sum": "$repo_additions"},
+                    "total_deletions": {"$sum": "$repo_deletions"},
+                    "total_commits": {"$sum": "$repo_commits"},
+                    "last_commit": {"$max": "$last_commit"}
                 }
             },
             {
-                "$sort": {"_id.email": 1, "last_commit_date": DESCENDING}
+                "$sort": {"_id": 1}
             }
         ]
 
         results = list(commits_collection.aggregate(pipeline))
         now = datetime.now(timezone.utc)
 
-        users_data = {}
-        now = datetime.now(timezone.utc)
+        users_data = []
 
         for doc in results:
-            email = doc["_id"]["email"]
-            repo_name = doc["_id"]["repo_name"]
-            last_commit = doc["last_commit_date"]
-
+            last_commit = doc["last_commit"]
             if last_commit.tzinfo is None:
                 last_commit = last_commit.replace(tzinfo=timezone.utc)
 
             delta_hours = (now - last_commit).total_seconds() / 3600
             if delta_hours <= 6:
-                status = "active"
+                user_status = "active"
             elif delta_hours <= 24:
-                status = "idle"
+                user_status = "idle"
             else:
-                status = "inactive"
+                user_status = "inactive"
 
+            repos = []
+            for repo in doc["repos"]:
+                repo_last_commit = repo["last_commit"]
+                if repo_last_commit.tzinfo is None:
+                    repo_last_commit = repo_last_commit.replace(tzinfo=timezone.utc)
 
-            if email not in users_data:
-                users_data[email] = {
-                    "email": email,
-                    "repos": [],
-                    "changes" : {
-                        "additions" : 0,
-                        "deletions" : 0
-                    },
-                    "status" : "inactive"
-                }
+                repo_delta = (now - repo_last_commit).total_seconds() / 3600
+                if repo_delta <= 6:
+                    repo_status = "active"
+                elif repo_delta <= 24:
+                    repo_status = "idle"
+                else:
+                    repo_status = "inactive"
 
-            users_data[email]["repos"].append({
-                "repo_name": repo_name,
-                "last_commit": last_commit,
-                "repo_additions": doc["total_additions"],
-                "repo_deletions": doc["total_deletions"],
-                "activity_status": status,
+                repos.append({
+                    "repo_name": repo["repo_name"],
+                    "last_commit": repo_last_commit,
+                    "repo_additions": repo["repo_additions"],
+                    "repo_deletions": repo["repo_deletions"],
+                    "activity_status": repo_status
+                })
+
+            users_data.append({
+                "email": doc["_id"],
+                "repos": repos,
+                "changes": {
+                    "additions": doc["total_additions"],
+                    "deletions": doc["total_deletions"]
+                },
+                "status": user_status,
+                "total_commits": doc["total_commits"]
             })
-            users_data[email]["changes"]["additions"] += doc["total_additions"]
-            users_data[email]["changes"]["deletions"] += doc["total_deletions"]
-            if users_data[email]["status"] == "inactive":
-                users_data[email]["status"] = status
-            elif users_data[email]["status"] == "idle" and status == "active":
-                users_data[email]["status"] = status
 
-        return list(users_data.values())
+        return users_data
 
     except Exception as e:
         return {"error": str(e)}
