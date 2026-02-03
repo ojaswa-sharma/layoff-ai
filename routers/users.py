@@ -104,7 +104,6 @@ async def get_developer(
         match_stage = {"email": email}
         project_data = None
 
-        # scope by repo ONLY if provided
         if project:
             match_stage["repository_name"] = project
             project_data = await personalizer.get_project_data(
@@ -133,9 +132,7 @@ async def get_developer(
 
             {
                 "$facet": {
-                    # ------------------------------------------------------
-                    # COMMIT HISTORY (global OR per repo)
-                    # ------------------------------------------------------
+                    # ---------------- COMMITS (paginated) ----------------
                     "commits": [
                         {"$sort": {"date": -1}},
                         {"$skip": skip},
@@ -158,9 +155,27 @@ async def get_developer(
                         },
                     ],
 
-                    # ------------------------------------------------------
-                    # STATS (global OR per repo)
-                    # ------------------------------------------------------
+                    # ---------------- PROJECT LIST ----------------
+                    "projects": [
+                        {
+                            "$group": {
+                                "_id": "$repository_name",
+                                "commit_count": {"$sum": 1},
+                                "last_commit": {"$max": "$date"},
+                            }
+                        },
+                        {"$sort": {"last_commit": -1}},
+                        {
+                            "$project": {
+                                "_id": 0,
+                                "repository_name": "$_id",
+                                "commit_count": 1,
+                                "last_commit": 1,
+                            }
+                        },
+                    ],
+
+                    # ---------------- STATS ----------------
                     "department_counts": [
                         {
                             "$group": {
@@ -199,6 +214,8 @@ async def get_developer(
 
         response = {
             "user_data": user_data,
+
+            "projects": result["projects"],
 
             "stats": {
                 "departments": {
