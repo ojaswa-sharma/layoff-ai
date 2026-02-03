@@ -4,6 +4,27 @@ from enum import Enum
 from datetime import datetime
 
 
+class SyncStatus(str, Enum):
+    """Repository synchronization status"""
+    BACKFILLING = "BACKFILLING"
+    LIVE = "LIVE"
+    FAILED = "FAILED"
+
+
+class Repository(BaseModel):
+    """Repository metadata and sync status tracking"""
+    repository_name: str
+    repository_full_name: str
+    repository_url: str
+    installation_id: int
+    sync_status: SyncStatus = SyncStatus.BACKFILLING
+    backfill_started_at: Optional[datetime] = None
+    backfill_completed_at: Optional[datetime] = None
+    last_commit_processed: Optional[str] = None  # commit SHA
+    total_commits_backfilled: int = 0
+    error_message: Optional[str] = None
+
+
 class Commit(BaseModel):
     commit_hash: str
     message: str
