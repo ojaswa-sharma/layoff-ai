@@ -3,13 +3,22 @@ import os
 from models.commits import CommitDetails
 from services.zep_store import get_personalizer, botMessage
 import asyncio
+from dotenv import load_dotenv
+
+load_dotenv()
 
 _client = None
 
 def get_openai():
     global _client
     if _client is None:
-        _client = AsyncOpenAI(api_key=os.getenv("OPENAI_KEY"))
+        # Support both OPENAI_KEY and OPENAI_API_KEY environment variables
+        api_key = os.getenv("OPENAI_KEY") or os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError(
+                "OpenAI API key not found. Please set either OPENAI_KEY or OPENAI_API_KEY environment variable."
+            )
+        _client = AsyncOpenAI(api_key=api_key)
     return _client
 
 async def summarie_diff(openai:AsyncOpenAI, diff_text, name, mail, repo_name, commit_title):

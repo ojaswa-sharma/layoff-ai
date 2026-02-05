@@ -1,12 +1,210 @@
-from fastapi import APIRouter, Request
+"""
+Bitbucket webhook router handling push events and repository setup.
+
+This router processes:
+- Push events: Real-time commit processing via webhooks
+- Repository setup: Triggers historical backfill when repository is first connected
+"""
+from fastapi import APIRouter, Request, Depends, HTTPException
+from models.commits import SyncStatus
+from services.commit_processor import process_bitbucket_commit_from_webhook
+from services.backfill import backfill_bitbucket_repository
+from services.db import get_mongo_db
+import asyncio
+import logging
+from datetime import datetime
+import os
+import hashlib
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/bitbucket")
 
 
-@router.post('/webhook')
-async def hook_bitbucket(
-    request : Request
-):
-    print(await request.json())
+@router.get('/test-token')
+async def test_token():
+    """Test endpoint to verify Bitbucket OAuth token retrieval."""
+    try:
+        from services.bitbucket_api import fetch_diff
+        diff = await fetch_diff(
+            "https://api.bitbucket.org/2.0/repositories/dpkgusain/test-repo-1/diff/6a9dbe2fba2d5b4cc6339e7a527a214ea9ef2d13..0f7a3c3e6b728df710d97e9073af7f4c206ab5f2"
+        )
+        print(diff)
 
-    print("Webhook received")
+        return {
+            "success": True,
+            "diff": diff
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_type": type(e).__name__
+        }
+
+
+@router.post('/webhook')
+async def webhook_bitbucket(request: Request, mongo=Depends(get_mongo_db)):
+    """
+    Handle Bitbucket webhook events.
+    
+    Supports:
+    - repo:push: Process commits from push events (real-time)
+    """
+    try:
+        # Get Bitbucket event type from headers
+        event_type = request.headers.get("X-Event-Key", "repo:push")
+        
+        request_data = await request.json()
+        
+        # Handle push events
+        if event_type == "repo:push":
+            return await handle_push_event(request_data, mongo)
+        
+        # Ignore other event types
+        return {
+            "message": f"Event type '{event_type}' not processed",
+            "event_type": event_type,
+        }
+        
+    except KeyError as e:
+        logger.error(f"Missing required field: {e}")
+        raise HTTPException(status_code=400, detail=f"Missing required field: {str(e)}")
+    except Exception as e:
+        logger.error(f"Error processing webhook: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error processing webhook: {str(e)}")
+
+
+async def handle_push_event(request_data: dict, mongo):
+    """
+    Handle push webhook events - process commits in real-time.
+    
+    This maintains similar behavior to GitHub webhook handling:
+    - Idempotency checks
+    - Lazy backfill triggering for repositories not yet synced
+    """
+    # Extract repository information from Bitbucket webhook payload
+    repository = request_data.get("repository", {})
+    repo_full_name = repository.get("full_name", "")  # workspace/repo
+    repo_name = repository.get("name", "")
+    repo_url = repository.get("links", {}).get("html", {}).get("href", "")
+    
+    # Extract workspace information
+    workspace = repository.get("workspace", {})
+    workspace_slug = workspace.get("slug", "") or workspace.get("uuid", "")
+    
+    if not repo_full_name or not workspace_slug:
+        logger.error("Missing repository or workspace info in webhook payload")
+        raise HTTPException(status_code=400, detail="Missing repository or workspace information")
+    
+    # Convert workspace slug to integer for installation_id field (hash-based)
+    # This ensures compatibility with the Commit model which expects int
+    workspace_id = int(hashlib.md5(workspace_slug.encode()).hexdigest()[:8], 16)
+    
+    # Lazy backfill trigger: if repo doesn't exist or is not LIVE, trigger backfill
+    # Uses atomic update as a distributed lock to ensure only one backfill runs at a time
+    
+    # Check current repository status
+    repo_status = mongo.repositories.find_one({
+        "repository_full_name": repo_full_name,
+        "installation_id": workspace_id,
+    })
+    
+    current_status = repo_status.get("sync_status") if repo_status else None
+    
+    # Trigger backfill if repository doesn't exist or is not LIVE
+    # Skip if already BACKFILLING (another process is handling it)
+    if current_status != SyncStatus.LIVE.value and current_status != SyncStatus.BACKFILLING.value:
+        # Atomically try to set status to BACKFILLING (acts as distributed lock)
+        updated_repo = mongo.repositories.find_one_and_update(
+            {
+                "repository_full_name": repo_full_name,
+                "installation_id": workspace_id,
+                "$or": [
+                    {"sync_status": {"$ne": SyncStatus.BACKFILLING.value}},
+                    {"sync_status": {"$exists": False}},
+                ],
+            },
+            {
+                "$set": {
+                    "repository_name": repo_name,
+                    "repository_full_name": repo_full_name,
+                    "repository_url": repo_url,
+                    "installation_id": workspace_id,
+                    "sync_status": SyncStatus.BACKFILLING.value,
+                    "backfill_started_at": datetime.utcnow(),
+                    "error_message": None,
+                },
+            },
+            upsert=True,
+            return_document=True,
+        )
+        
+        # If update succeeded (returned document with BACKFILLING status), trigger backfill
+        if updated_repo and updated_repo.get("sync_status") == SyncStatus.BACKFILLING.value:
+            logger.info(
+                f"Lazy backfill triggered for Bitbucket {repo_full_name} "
+                f"(workspace {workspace_id}) - previous status: {current_status or 'missing'}"
+            )
+            
+            # Get backfill limits from environment
+            max_commits = os.getenv("BACKFILL_MAX_COMMITS")
+            max_days = os.getenv("BACKFILL_MAX_DAYS")
+            
+            # Trigger backfill asynchronously (non-blocking)
+            asyncio.create_task(
+                backfill_bitbucket_repository(
+                    repo_full_name=repo_full_name,
+                    repo_name=repo_name,
+                    repo_url=repo_url,
+                    workspace_id=workspace_id,
+                    mongo_db=mongo,
+                    max_commits=int(max_commits) if max_commits else None,
+                    max_days=int(max_days) if max_days else None,
+                )
+            )
+        else:
+            # Another process is already backfilling (race condition handled)
+            logger.debug(
+                f"Backfill already in progress for Bitbucket {repo_full_name}, skipping trigger"
+            )
+    elif current_status == SyncStatus.BACKFILLING.value:
+        # Backfill already in progress
+        logger.debug(
+            f"Received webhook for Bitbucket {repo_full_name} while backfill in progress. "
+            "Processing commit anyway (idempotency will prevent duplicates)."
+        )
+    
+    # Process commits from push changes
+    # Bitbucket push webhook structure: push.changes[].commits[]
+    processed_count = 0
+    skipped_count = 0
+    
+    push_data = request_data.get("push", {})
+    changes = push_data.get("changes", [])
+    
+    for change in changes:
+        commits = change.get("commits", [])
+        
+        for commit in commits:
+            result = await process_bitbucket_commit_from_webhook(
+                commit_data=commit,
+                repo_full_name=repo_full_name,
+                repo_name=repo_name,
+                repo_url=repo_url,
+                workspace_id=workspace_id,
+                mongo_db=mongo,
+                skip_existing=True,  # Idempotency: skip existing commits
+            )
+            
+            if result is None:
+                skipped_count += 1
+            else:
+                processed_count += 1
+    
+    return {
+        "message": "Webhook processed successfully",
+        "event_type": "repo:push",
+        "processed_commits": processed_count,
+        "skipped_commits": skipped_count,
+    }
