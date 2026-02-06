@@ -3,7 +3,7 @@ from services.db import get_mongo_db
 from datetime import datetime, timezone, timedelta
 from pymongo import DESCENDING
 from services.zep_store import get_personalizer
-
+from math import ceil
 
 router = APIRouter(prefix='/v1/users')
 
@@ -26,7 +26,6 @@ async def list_users(db=Depends(get_mongo_db), page=1, limit=10):
                     "repo_commits": {"$sum": 1}
                 }
             },
-            # 2️⃣ User-level aggregation (THIS is the key optimization)
             {
                 "$group": {
                     "_id": "$_id.email",
@@ -105,6 +104,164 @@ async def list_users(db=Depends(get_mongo_db), page=1, limit=10):
 
     except Exception as e:
         return {"error": str(e)}
+
+@router.get("/list")
+async def list_users(
+    db=Depends(get_mongo_db),
+    page: int = Query(1, ge=1),
+    limit: int = Query(10, ge=1, le=100),
+):
+    try:
+        commits = db["commits"]
+        skip = (page - 1) * limit
+
+        pipeline = [
+            # 1️⃣ Collapse to distinct users first (CHEAP)
+            {
+                "$group": {
+                    "_id": "$email",
+                    "last_commit": {"$max": "$date"}
+                }
+            },
+
+            {"$sort": {"_id": 1}},
+
+            # 2️⃣ Pagination + total users
+            {
+                "$facet": {
+                    "metadata": [
+                        {"$count": "total_items"}
+                    ],
+                    "users": [
+                        {"$skip": skip},
+                        {"$limit": limit}
+                    ]
+                }
+            },
+
+            # 3️⃣ Extract user list
+            {
+                "$project": {
+                    "total_items": {
+                        "$ifNull": [{"$arrayElemAt": ["$metadata.total_items", 0]}, 0]
+                    },
+                    "users": "$users"
+                }
+            },
+
+            # 4️⃣ Lookup commits ONLY for paginated users
+            {
+                "$lookup": {
+                    "from": "commits",
+                    "let": {"emails": "$users._id"},
+                    "pipeline": [
+                        {
+                            "$match": {
+                                "$expr": {"$in": ["$email", "$$emails"]}
+                            }
+                        },
+
+                        # repo-level aggregation
+                        {
+                            "$group": {
+                                "_id": {
+                                    "email": "$email",
+                                    "repo": "$repository_name"
+                                },
+                                "last_commit": {"$max": "$date"},
+                                "repo_additions": {"$sum": "$changes.additions"},
+                                "repo_deletions": {"$sum": "$changes.deletions"},
+                                "repo_commits": {"$sum": 1}
+                            }
+                        },
+
+                        # user-level aggregation
+                        {
+                            "$group": {
+                                "_id": "$_id.email",
+                                "repos": {
+                                    "$push": {
+                                        "repo_name": "$_id.repo",
+                                        "last_commit": "$last_commit",
+                                        "repo_additions": "$repo_additions",
+                                        "repo_deletions": "$repo_deletions",
+                                        "repo_commits": "$repo_commits"
+                                    }
+                                },
+                                "total_additions": {"$sum": "$repo_additions"},
+                                "total_deletions": {"$sum": "$repo_deletions"},
+                                "total_commits": {"$sum": "$repo_commits"},
+                                "last_commit": {"$max": "$last_commit"}
+                            }
+                        }
+                    ],
+                    "as": "user_stats"
+                }
+            }
+        ]
+
+        result = list(commits.aggregate(pipeline))[0]
+
+        total_items = result["total_items"]
+        total_pages = ceil(total_items / limit) if total_items else 0
+
+        now = datetime.now(timezone.utc)
+        users_data = []
+
+        stats_by_email = {
+            u["_id"]: u for u in result["user_stats"]
+        }
+
+        for user in result["users"]:
+            email = user["_id"]
+            doc = stats_by_email[email]
+
+            last_commit = doc["last_commit"]
+            if last_commit.tzinfo is None:
+                last_commit = last_commit.replace(tzinfo=timezone.utc)
+
+            hours = (now - last_commit).total_seconds() / 3600
+            status = "active" if hours <= 6 else "idle" if hours <= 24 else "inactive"
+
+            repos = []
+            for r in doc["repos"]:
+                r_last = r["last_commit"]
+                if r_last.tzinfo is None:
+                    r_last = r_last.replace(tzinfo=timezone.utc)
+
+                r_hours = (now - r_last).total_seconds() / 3600
+                r_status = "active" if r_hours <= 6 else "idle" if r_hours <= 24 else "inactive"
+
+                repos.append({
+                    "repo_name": r["repo_name"],
+                    "last_commit": r_last,
+                    "repo_additions": r["repo_additions"],
+                    "repo_deletions": r["repo_deletions"],
+                    "activity_status": r_status
+                })
+
+            users_data.append({
+                "email": email,
+                "repos": repos,
+                "changes": {
+                    "additions": doc["total_additions"],
+                    "deletions": doc["total_deletions"]
+                },
+                "status": status,
+                "total_commits": doc["total_commits"]
+            })
+
+        return {
+            "page": page,
+            "limit": limit,
+            "total_items": total_items,
+            "total_pages": total_pages,
+            "data": users_data
+        }
+
+    except Exception as e:
+        return {"error": str(e)}
+
 
 
 @router.get("/developer/{email}")
