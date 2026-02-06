@@ -56,6 +56,30 @@ def init_mongo():
         logger.info("Created additional indexes on commits collection")
     except Exception as e:
         logger.warning(f"Index creation (may already exist): {e}")
+    
+    # Create unique index on pr_merges for idempotency
+    try:
+        mongo_db.pr_merges.create_index(
+            [
+                ("repository_name", 1),
+                ("merge_commit_hash", 1),
+                ("installation_id", 1),
+            ],
+            unique=True,
+            name="unique_pr_merge_per_repo",
+        )
+        logger.info("Created unique index on pr_merges collection")
+    except Exception as e:
+        logger.warning(f"Index creation (may already exist): {e}")
+    
+    # Create index for faster queries on pr_merges
+    try:
+        mongo_db.pr_merges.create_index([("merged_by_email", 1), ("repository_name", 1)])
+        mongo_db.pr_merges.create_index([("installation_id", 1)])
+        mongo_db.pr_merges.create_index([("date", -1)])  # For date-based queries
+        logger.info("Created additional indexes on pr_merges collection")
+    except Exception as e:
+        logger.warning(f"Index creation (may already exist): {e}")
 
 def get_mongo_db():
     global mongo_db

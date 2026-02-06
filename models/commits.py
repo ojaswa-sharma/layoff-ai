@@ -55,6 +55,20 @@ class WorkType(Enum):
     tech_debt : str = "tech_debt"
     other : str = "other"
 
+class PRMerge(BaseModel):
+    """PR merge event - separate from regular commits, no diff/changes tracking"""
+    pr_number: int
+    pr_title: str
+    merge_commit_hash: str
+    merged_by: str
+    merged_by_email: str
+    repository_name: str
+    repository_url: str
+    date: datetime
+    installation_id: int
+    source: str  # "github" or "bitbucket"
+
+
 class CommitDetails(BaseModel):
     commit_summary: str = Field(
         ...,
