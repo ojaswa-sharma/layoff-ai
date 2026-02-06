@@ -1,4 +1,5 @@
 import asyncio
+import os
 import requests
 from dotenv import load_dotenv
 from services.auth.bitbucket_oauth import get_access_token
@@ -9,8 +10,9 @@ load_dotenv()
 async def main():
     access_token = await get_access_token()
 
-    workspace = "rsharma87"
-    # workspace = "dpkgusain"
+    workspace = os.getenv("BITBUCKET_WORKSPACE")
+    if not workspace:
+        raise ValueError("BITBUCKET_WORKSPACE environment variable not set")
 
     url = f"https://api.bitbucket.org/2.0/workspaces/{workspace}/hooks"
 
@@ -21,7 +23,7 @@ async def main():
 
     payload = {
         "description": "Workspace-wide Bitbucket webhook",
-        "url": "https://ems.houseofapps.ai/bitbucket/webhook",
+        "url": os.getenv("BITBUCKET_WEBHOOK_URL"),
         "active": True,
         "events": [
             "repo:push",
