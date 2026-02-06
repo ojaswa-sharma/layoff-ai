@@ -67,6 +67,17 @@ def init_mongo():
         unique=True
     )
 
+    ensure_index(
+        mongo_db.pr_merges,
+        [
+                ("repository_name", 1),
+                ("merge_commit_hash", 1),
+                ("installation_id", 1),
+        ],
+        unique = True,
+        name="unique_pr_merge_per_repo"
+    )
+
     logger.info("Mongo indexes initialized")
 
 def get_mongo_db():
