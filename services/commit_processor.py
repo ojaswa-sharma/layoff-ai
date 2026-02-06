@@ -5,9 +5,9 @@ This module provides a unified way to process commits, ensuring consistency
 between real-time webhook processing and historical backfill.
 """
 import logging
-from typing import Optional
+from typing import Optional, Tuple
 from datetime import datetime
-from models.commits import Commit
+from models.commits import Commit, SyncStatus
 from services.git_diff import fetch_diff_from_webhook, fetch_bitbucket_diff, count_diff_stats
 from services.ai_service import summarize_and_upload
 import asyncio
@@ -15,6 +15,84 @@ import asyncio
 logger = logging.getLogger(__name__)
 
 MAX_DIFF_SIZE = 1_000_000  # 1MB limit for diff processing
+ZEP_COMMIT_LIMIT = 20  # Maximum number of commits to send to Zep per repository
+
+
+async def should_send_to_zep(
+    mongo_db,
+    repo_name: str,
+    repo_full_name: str,
+    installation_id: int,
+    context: str = "webhook",  # "webhook" or "backfill"
+) -> Tuple[bool, bool]:
+    """
+    Check if we should send a commit to Zep based on repository status and 20-commit limit.
+    
+    Args:
+        mongo_db: MongoDB database instance
+        repo_name: Repository name to check
+        repo_full_name: Repository full name (owner/repo)
+        installation_id: Installation/workspace ID
+        context: Context of the call - "webhook" or "backfill"
+    
+    Returns:
+        Tuple of (should_send: bool, marked_live: bool)
+        - should_send: True if commit should be sent to Zep
+        - marked_live: True if repository was just marked as LIVE (20th commit sent)
+    """
+    try:
+        # Fetch repository status from database
+        repo = mongo_db.repositories.find_one({
+            "repository_full_name": repo_full_name,
+            "installation_id": installation_id,
+        })
+        
+        current_status = repo.get("sync_status") if repo else None
+        
+        # If status is LIVE and called from backfill context, skip Zep
+        if current_status == SyncStatus.LIVE.value and context == "backfill":
+            logger.debug(
+                f"Repository {repo_name} is LIVE, skipping Zep submission during backfill"
+            )
+            return False, False
+        
+        # Count commits that have been sent to Zep (exist in commit_summary collection)
+        count = mongo_db.commit_summary.count_documents({"repo_name": repo_name})
+        should_send = count < ZEP_COMMIT_LIMIT
+        
+        # If we're about to send the 20th commit, mark repository as LIVE
+        marked_live = False
+        if should_send and count == ZEP_COMMIT_LIMIT - 1:
+            # This will be the 20th commit, mark repository as LIVE
+            result = mongo_db.repositories.update_one(
+                {
+                    "repository_full_name": repo_full_name,
+                    "installation_id": installation_id,
+                },
+                {
+                    "$set": {
+                        "sync_status": SyncStatus.LIVE.value,
+                    },
+                },
+                upsert=False,  # Don't create if doesn't exist
+            )
+            if result.modified_count > 0:
+                marked_live = True
+                logger.info(
+                    f"Repository {repo_name} marked as LIVE after sending {ZEP_COMMIT_LIMIT} commits to Zep"
+                )
+        
+        if not should_send:
+            logger.debug(
+                f"Repository {repo_name} has reached Zep limit ({count}/{ZEP_COMMIT_LIMIT}), "
+                "skipping Zep submission"
+            )
+        
+        return should_send, marked_live
+    except Exception as e:
+        logger.error(f"Error checking Zep limit for {repo_name}: {e}")
+        # On error, default to allowing submission to avoid blocking commits
+        return True, False
 
 
 async def process_commit_from_webhook(
@@ -125,18 +203,27 @@ async def process_commit_from_webhook(
                 return None
             raise
         
-        # Trigger AI analysis asynchronously
-        asyncio.create_task(
-            summarize_and_upload(
-                diff_text,
-                commit_model.author,
-                commit_model.email,
-                repo_name,
-                commit_model.message,
-                mongo_db,
-                commit_hash=commit_hash,
-            )
+        # Trigger AI analysis asynchronously only if we haven't reached the Zep limit
+        should_send, marked_live = await should_send_to_zep(
+            mongo_db, repo_name, repo_full_name, installation_id, context="webhook"
         )
+        if should_send:
+            asyncio.create_task(
+                summarize_and_upload(
+                    diff_text,
+                    commit_model.author,
+                    commit_model.email,
+                    repo_name,
+                    commit_model.message,
+                    mongo_db,
+                    commit_hash=commit_hash,
+                )
+            )
+        else:
+            logger.info(
+                f"Commit {commit_hash} for repository {repo_name} stored in database but skipped Zep submission "
+                f"(limit of {ZEP_COMMIT_LIMIT} commits reached or repository is LIVE)"
+            )
         
         return commit_model
         
@@ -275,18 +362,27 @@ async def process_bitbucket_commit_from_webhook(
                 return None
             raise
         
-        # Trigger AI analysis asynchronously
-        asyncio.create_task(
-            summarize_and_upload(
-                diff_text,
-                commit_model.author,
-                commit_model.email,
-                repo_name,
-                commit_model.message,
-                mongo_db,
-                commit_hash=commit_hash,
-            )
+        # Trigger AI analysis asynchronously only if we haven't reached the Zep limit
+        should_send, marked_live = await should_send_to_zep(
+            mongo_db, repo_name, repo_full_name, workspace_id, context="webhook"
         )
+        if should_send:
+            asyncio.create_task(
+                summarize_and_upload(
+                    diff_text,
+                    commit_model.author,
+                    commit_model.email,
+                    repo_name,
+                    commit_model.message,
+                    mongo_db,
+                    commit_hash=commit_hash,
+                )
+            )
+        else:
+            logger.info(
+                f"Commit {commit_hash} for repository {repo_name} stored in database but skipped Zep submission "
+                f"(limit of {ZEP_COMMIT_LIMIT} commits reached or repository is LIVE)"
+            )
         
         return commit_model
         

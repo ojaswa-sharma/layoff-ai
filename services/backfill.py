@@ -14,6 +14,7 @@ from services.git_diff import get_installation_token, fetch_diff_from_webhook, f
 from services.auth.bitbucket_oauth import get_access_token
 from models.commits import Commit, SyncStatus
 from services.ai_service import summarize_and_upload
+from services.commit_processor import should_send_to_zep, ZEP_COMMIT_LIMIT
 
 logger = logging.getLogger(__name__)
 
@@ -259,18 +260,27 @@ async def process_commit(
                 return None
             raise
         
-        # Trigger AI analysis asynchronously
-        asyncio.create_task(
-            summarize_and_upload(
-                diff_text,
-                commit_model.author,
-                commit_model.email,
-                repo_name,
-                commit_model.message,
-                mongo_db,
-                commit_hash=commit_hash,
-            )
+        # Trigger AI analysis asynchronously only if we haven't reached the Zep limit
+        should_send, marked_live = await should_send_to_zep(
+            mongo_db, repo_name, repo_full_name, installation_id, context="backfill"
         )
+        if should_send:
+            asyncio.create_task(
+                summarize_and_upload(
+                    diff_text,
+                    commit_model.author,
+                    commit_model.email,
+                    repo_name,
+                    commit_model.message,
+                    mongo_db,
+                    commit_hash=commit_hash,
+                )
+            )
+        else:
+            logger.info(
+                f"Commit {commit_hash} for repository {repo_name} stored in database but skipped Zep submission "
+                f"(limit of {ZEP_COMMIT_LIMIT} commits reached or repository is LIVE)"
+            )
         
         return commit_model
         
@@ -426,24 +436,48 @@ async def backfill_repository(
             # Small delay between batches to respect rate limits
             await asyncio.sleep(1)
         
-        # Update repository status to LIVE
-        mongo_db.repositories.update_one(
-            {
-                "repository_full_name": repo_full_name,
-                "installation_id": installation_id,
-            },
-            {
-                "$set": {
-                    "sync_status": SyncStatus.LIVE.value,
-                    "backfill_completed_at": datetime.utcnow(),
-                    "total_commits_backfilled": processed_count,
+        # Update repository status - only set to LIVE if not already LIVE (from 20 commits sent to Zep)
+        # Otherwise, keep current status (may still be BACKFILLING if fewer than 20 commits exist)
+        repo_status = mongo_db.repositories.find_one({
+            "repository_full_name": repo_full_name,
+            "installation_id": installation_id,
+        })
+        current_status = repo_status.get("sync_status") if repo_status else None
+        
+        # Only update status if not already LIVE (LIVE status is set when 20th commit is sent to Zep)
+        if current_status != SyncStatus.LIVE.value:
+            mongo_db.repositories.update_one(
+                {
+                    "repository_full_name": repo_full_name,
+                    "installation_id": installation_id,
                 },
-            },
-        )
+                {
+                    "$set": {
+                        "sync_status": SyncStatus.LIVE.value,
+                        "backfill_completed_at": datetime.utcnow(),
+                        "total_commits_backfilled": processed_count,
+                    },
+                },
+            )
+        else:
+            # Already LIVE, just update completion timestamp and count
+            mongo_db.repositories.update_one(
+                {
+                    "repository_full_name": repo_full_name,
+                    "installation_id": installation_id,
+                },
+                {
+                    "$set": {
+                        "backfill_completed_at": datetime.utcnow(),
+                        "total_commits_backfilled": processed_count,
+                    },
+                },
+            )
         
         logger.info(
             f"Backfill completed for {repo_full_name}: "
-            f"{processed_count} processed, {skipped_count} skipped"
+            f"{processed_count} processed, {skipped_count} skipped, "
+            f"status: {current_status or 'LIVE'}"
         )
         
         return {
@@ -673,18 +707,27 @@ async def process_bitbucket_commit(
                 return None
             raise
         
-        # Trigger AI analysis asynchronously
-        asyncio.create_task(
-            summarize_and_upload(
-                diff_text,
-                commit_model.author,
-                commit_model.email,
-                repo_name,
-                commit_model.message,
-                mongo_db,
-                commit_hash=commit_hash,
-            )
+        # Trigger AI analysis asynchronously only if we haven't reached the Zep limit
+        should_send, marked_live = await should_send_to_zep(
+            mongo_db, repo_name, repo_full_name, workspace_id, context="backfill"
         )
+        if should_send:
+            asyncio.create_task(
+                summarize_and_upload(
+                    diff_text,
+                    commit_model.author,
+                    commit_model.email,
+                    repo_name,
+                    commit_model.message,
+                    mongo_db,
+                    commit_hash=commit_hash,
+                )
+            )
+        else:
+            logger.info(
+                f"Commit {commit_hash} for repository {repo_name} stored in database but skipped Zep submission "
+                f"(limit of {ZEP_COMMIT_LIMIT} commits reached or repository is LIVE)"
+            )
         
         return commit_model
         
@@ -829,24 +872,48 @@ async def backfill_bitbucket_repository(
             # Small delay between batches to respect rate limits
             await asyncio.sleep(1)
         
-        # Update repository status to LIVE
-        mongo_db.repositories.update_one(
-            {
-                "repository_full_name": repo_full_name,
-                "installation_id": workspace_id,
-            },
-            {
-                "$set": {
-                    "sync_status": SyncStatus.LIVE.value,
-                    "backfill_completed_at": datetime.utcnow(),
-                    "total_commits_backfilled": processed_count,
+        # Update repository status - only set to LIVE if not already LIVE (from 20 commits sent to Zep)
+        # Otherwise, keep current status (may still be BACKFILLING if fewer than 20 commits exist)
+        repo_status = mongo_db.repositories.find_one({
+            "repository_full_name": repo_full_name,
+            "installation_id": workspace_id,
+        })
+        current_status = repo_status.get("sync_status") if repo_status else None
+        
+        # Only update status if not already LIVE (LIVE status is set when 20th commit is sent to Zep)
+        if current_status != SyncStatus.LIVE.value:
+            mongo_db.repositories.update_one(
+                {
+                    "repository_full_name": repo_full_name,
+                    "installation_id": workspace_id,
                 },
-            },
-        )
+                {
+                    "$set": {
+                        "sync_status": SyncStatus.LIVE.value,
+                        "backfill_completed_at": datetime.utcnow(),
+                        "total_commits_backfilled": processed_count,
+                    },
+                },
+            )
+        else:
+            # Already LIVE, just update completion timestamp and count
+            mongo_db.repositories.update_one(
+                {
+                    "repository_full_name": repo_full_name,
+                    "installation_id": workspace_id,
+                },
+                {
+                    "$set": {
+                        "backfill_completed_at": datetime.utcnow(),
+                        "total_commits_backfilled": processed_count,
+                    },
+                },
+            )
         
         logger.info(
             f"Bitbucket backfill completed for {repo_full_name}: "
-            f"{processed_count} processed, {skipped_count} skipped"
+            f"{processed_count} processed, {skipped_count} skipped, "
+            f"status: {current_status or 'LIVE'}"
         )
         
         return {
