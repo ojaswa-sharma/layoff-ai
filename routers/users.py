@@ -13,7 +13,6 @@ async def list_users(db=Depends(get_mongo_db), page=1, limit=10):
         commits_collection = db["commits"]
 
         pipeline = [
-            # 1️⃣ Repo-level aggregation
             {
                 "$group": {
                     "_id": {
@@ -116,7 +115,6 @@ async def list_users(
         skip = (page - 1) * limit
 
         pipeline = [
-            # 1️⃣ Collapse to distinct users first (CHEAP)
             {
                 "$group": {
                     "_id": "$email",
@@ -126,7 +124,6 @@ async def list_users(
 
             {"$sort": {"_id": 1}},
 
-            # 2️⃣ Pagination + total users
             {
                 "$facet": {
                     "metadata": [
@@ -139,7 +136,6 @@ async def list_users(
                 }
             },
 
-            # 3️⃣ Extract user list
             {
                 "$project": {
                     "total_items": {
@@ -149,7 +145,6 @@ async def list_users(
                 }
             },
 
-            # 4️⃣ Lookup commits ONLY for paginated users
             {
                 "$lookup": {
                     "from": "commits",
@@ -161,7 +156,6 @@ async def list_users(
                             }
                         },
 
-                        # repo-level aggregation
                         {
                             "$group": {
                                 "_id": {
@@ -175,7 +169,6 @@ async def list_users(
                             }
                         },
 
-                        # user-level aggregation
                         {
                             "$group": {
                                 "_id": "$_id.email",
@@ -312,7 +305,6 @@ async def get_developer(
 
             {
                 "$facet": {
-                    # ---------------- COMMITS (paginated) ----------------
                     "commits": [
                         {"$sort": {"date": -1}},
                         {"$skip": skip},
@@ -335,7 +327,6 @@ async def get_developer(
                         },
                     ],
 
-                    # ---------------- PROJECT LIST ----------------
                     "projects": [
                         {
                             "$group": {
@@ -355,7 +346,6 @@ async def get_developer(
                         },
                     ],
 
-                    # ---------------- STATS ----------------
                     "department_counts": [
                         {
                             "$group": {
