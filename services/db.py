@@ -6,80 +6,68 @@ logger = logging.getLogger(__name__)
 
 mongo_db = None
 
+def ensure_index(collection, keys, name=None, **kwargs):
+    existing = collection.index_information()
+
+    if name and name in existing:
+        return
+
+    for idx_name, info in existing.items():
+        if info.get("key") == keys:
+            return
+    collection.create_index(keys, name=name, **kwargs)
+
+    print(f"Index added for {kwargs.get('name')}")
+
 def init_mongo():
-    """
-    Initialize MongoDB connection and create necessary indexes.
-    
-    Creates unique indexes to ensure idempotency:
-    - commits: (repository_name, commit_hash, installation_id)
-    - repositories: (repository_full_name, installation_id)
-    """
     global mongo_db
-    client = MongoClient(host=os.getenv("MONGO_URL"))
+    client = MongoClient(os.getenv("MONGO_URL"))
     mongo_db = client["dev-tracker"]
-    
-    # Create unique index on commits for idempotency
-    # This prevents duplicate commits from being inserted
-    try:
-        mongo_db.commits.create_index(
-            [
-                ("repository_name", 1),
-                ("commit_hash", 1),
-                ("installation_id", 1),
-            ],
-            unique=True,
-            name="unique_commit_per_repo",
-        )
-        logger.info("Created unique index on commits collection")
-    except Exception as e:
-        logger.warning(f"Index creation (may already exist): {e}")
-    
-    # Create unique index on repositories
-    try:
-        mongo_db.repositories.create_index(
-            [
-                ("repository_full_name", 1),
-                ("installation_id", 1),
-            ],
-            unique=True,
-            name="unique_repo_per_installation",
-        )
-        logger.info("Created unique index on repositories collection")
-    except Exception as e:
-        logger.warning(f"Index creation (may already exist): {e}")
-    
-    # Create index for faster queries
-    try:
-        mongo_db.commits.create_index([("installation_id", 1)])
-        mongo_db.commits.create_index([("repository_name", 1)])
-        mongo_db.commits.create_index([("date", -1)])  # For date-based queries
-        logger.info("Created additional indexes on commits collection")
-    except Exception as e:
-        logger.warning(f"Index creation (may already exist): {e}")
-    
-    # Create unique index on pr_merges for idempotency
-    try:
-        mongo_db.pr_merges.create_index(
-            [
-                ("repository_name", 1),
-                ("merge_commit_hash", 1),
-                ("installation_id", 1),
-            ],
-            unique=True,
-            name="unique_pr_merge_per_repo",
-        )
-        logger.info("Created unique index on pr_merges collection")
-    except Exception as e:
-        logger.warning(f"Index creation (may already exist): {e}")
-    
-    # Create index for faster queries on pr_merges
-    try:
-        mongo_db.pr_merges.create_index([("merged_by_email", 1), ("repository_name", 1)])
-        mongo_db.pr_merges.create_index([("installation_id", 1)])
-        mongo_db.pr_merges.create_index([("date", -1)])  # For date-based queries
-        logger.info("Created additional indexes on pr_merges collection")
-    except Exception as e:
-        logger.warning(f"Index creation (may already exist): {e}")
+
+    # Idempotency index
+    ensure_index(
+        mongo_db.commits,
+        [
+            ("repository_name", 1),
+            ("commit_hash", 1),
+            ("installation_id", 1),
+        ],
+        name="unique_commit_per_repo",
+        unique=True
+    )
+
+    # Core aggregation indexes
+    ensure_index(
+        mongo_db.commits,
+        [
+            ("email", 1),
+            ("repository_name", 1),
+            ("date", -1),
+        ],
+        name="email_repo_date_idx"
+    )
+
+    ensure_index(
+        mongo_db.commits,
+        [
+            ("email", 1),
+            ("date", -1),
+        ],
+        name="email_date_idx"
+    )
+
+    # Repo uniqueness
+    ensure_index(
+        mongo_db.repositories,
+        [
+            ("repository_full_name", 1),
+            ("installation_id", 1),
+        ],
+        name="unique_repo_per_installation",
+        unique=True
+    )
+
+    logger.info("Mongo indexes initialized")
 
 def get_mongo_db():
     global mongo_db
