@@ -8,6 +8,7 @@ This router processes:
 from fastapi import APIRouter, Request, Depends, HTTPException
 from models.commits import SyncStatus
 from services.commit_processor import process_bitbucket_commit_from_webhook
+from services.pr_merge_processor import process_bitbucket_pr_merge
 from services.backfill import backfill_bitbucket_repository
 from services.db import get_mongo_db
 import asyncio
@@ -50,12 +51,17 @@ async def webhook_bitbucket(request: Request, mongo=Depends(get_mongo_db)):
     
     Supports:
     - repo:push: Process commits from push events (real-time)
+    - pullrequest:fulfilled: Process PR merge events (separate from commits)
     """
     try:
         # Get Bitbucket event type from headers
         event_type = request.headers.get("X-Event-Key", "repo:push")
         
         request_data = await request.json()
+        
+        # Handle pull request fulfilled events (PR merges)
+        if event_type == "pullrequest:fulfilled":
+            return await handle_pullrequest_fulfilled_event(request_data, mongo)
         
         # Handle push events
         if event_type == "repo:push":
@@ -73,6 +79,64 @@ async def webhook_bitbucket(request: Request, mongo=Depends(get_mongo_db)):
     except Exception as e:
         logger.error(f"Error processing webhook: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error processing webhook: {str(e)}")
+
+
+async def handle_pullrequest_fulfilled_event(request_data: dict, mongo):
+    """
+    Handle pullrequest:fulfilled webhook events - process PR merges separately from commits.
+    
+    PR merges are stored in pr_merges collection without diff/changes tracking.
+    """
+    # Extract repository information from Bitbucket webhook payload
+    repository = request_data.get("repository", {})
+    repo_full_name = repository.get("full_name", "")  # workspace/repo
+    repo_name = repository.get("name", "")
+    repo_url = repository.get("links", {}).get("html", {}).get("href", "")
+    
+    # Extract workspace information
+    workspace = repository.get("workspace", {})
+    workspace_slug = workspace.get("slug", "") or workspace.get("uuid", "")
+    
+    if not repo_full_name or not workspace_slug:
+        logger.error("Missing repository or workspace info in PR merge webhook payload")
+        raise HTTPException(status_code=400, detail="Missing repository or workspace information")
+    
+    # Convert workspace slug to integer for installation_id field (hash-based)
+    workspace_id = int(hashlib.md5(workspace_slug.encode()).hexdigest()[:8], 16)
+    
+    # Extract PR data from webhook payload
+    pr_data = request_data.get("pullrequest", {})
+    
+    if not pr_data:
+        logger.warning("PR merge webhook missing pullrequest data")
+        return {
+            "message": "PR merge webhook missing pullrequest data",
+            "event_type": "pullrequest:fulfilled",
+        }
+    
+    result = await process_bitbucket_pr_merge(
+        pr_data=pr_data,
+        repo_full_name=repo_full_name,
+        repo_name=repo_name,
+        repo_url=repo_url,
+        workspace_id=workspace_id,
+        mongo_db=mongo,
+        skip_existing=True,  # Idempotency: skip existing PR merges
+    )
+    
+    if result is None:
+        return {
+            "message": "PR merge already exists or failed to process",
+            "event_type": "pullrequest:fulfilled",
+            "pr_number": pr_data.get("id"),
+        }
+    
+    return {
+        "message": "PR merge processed successfully",
+        "event_type": "pullrequest:fulfilled",
+        "pr_number": pr_data.get("id"),
+        "merged_by": result.merged_by,
+    }
 
 
 async def handle_push_event(request_data: dict, mongo):

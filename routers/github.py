@@ -8,6 +8,7 @@ This router processes:
 from fastapi import APIRouter, Request, Depends, HTTPException
 from models.commits import Repository, SyncStatus
 from services.commit_processor import process_commit_from_webhook
+from services.pr_merge_processor import process_github_pr_merge
 from services.backfill import backfill_repository
 import os
 from services.db import get_mongo_db
@@ -44,6 +45,7 @@ async def webhook_github(request: Request, mongo=Depends(get_mongo_db)):
     
     Supports:
     - push: Process commits from push events (real-time)
+    - pull_request: Process PR merge events (separate from commits)
     - installation.created: Trigger historical backfill
     - installation.deleted: Clean up repository tracking
     """
@@ -64,6 +66,10 @@ async def webhook_github(request: Request, mongo=Depends(get_mongo_db)):
             else:
                 return {"message": f"Ignoring installation action: {action}"}
         
+        # Handle pull request events (PR merges)
+        if event_type == "pull_request":
+            return await handle_pull_request_event(request_data, mongo)
+        
         # Handle push events (existing functionality)
         if event_type == "push":
             return await handle_push_event(request_data, mongo)
@@ -83,6 +89,63 @@ async def webhook_github(request: Request, mongo=Depends(get_mongo_db)):
     except Exception as e:
         logger.error(f"Error processing webhook: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error processing webhook: {str(e)}")
+
+
+async def handle_pull_request_event(request_data: dict, mongo):
+    """
+    Handle pull_request webhook events - process PR merges separately from commits.
+    
+    Only processes PRs that are merged (action: closed, merged: true).
+    PR merges are stored in pr_merges collection without diff/changes tracking.
+    """
+    action = request_data.get("action")
+    
+    # Only process merged PRs
+    if action != "closed":
+        return {
+            "message": f"PR action '{action}' not processed (only 'closed' with merged=true)",
+            "action": action,
+        }
+    
+    pr_data = request_data.get("pull_request", {})
+    merged = pr_data.get("merged", False)
+    
+    if not merged:
+        return {
+            "message": "PR was closed but not merged, skipping",
+            "action": action,
+        }
+    
+    installation_id = request_data["installation"]["id"]
+    repo_full_name = request_data["repository"]["full_name"]
+    repo_name = request_data["repository"]["name"]
+    repo_url = request_data["repository"]["html_url"]
+    
+    result = await process_github_pr_merge(
+        pr_data=pr_data,
+        repo_full_name=repo_full_name,
+        repo_name=repo_name,
+        repo_url=repo_url,
+        installation_id=installation_id,
+        mongo_db=mongo,
+        skip_existing=True,  # Idempotency: skip existing PR merges
+    )
+    
+    if result is None:
+        return {
+            "message": "PR merge already exists or failed to process",
+            "event_type": "pull_request",
+            "action": action,
+            "pr_number": pr_data.get("number"),
+        }
+    
+    return {
+        "message": "PR merge processed successfully",
+        "event_type": "pull_request",
+        "action": action,
+        "pr_number": pr_data.get("number"),
+        "merged_by": result.merged_by,
+    }
 
 
 async def handle_push_event(request_data: dict, mongo):
