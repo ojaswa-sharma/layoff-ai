@@ -65,6 +65,7 @@ async def webhook_bitbucket(request: Request, mongo=Depends(get_mongo_db)):
         
         # Handle push events
         if event_type == "repo:push":
+            print("PUSHED")
             return await handle_push_event(request_data, mongo)
         
         # Ignore other event types
