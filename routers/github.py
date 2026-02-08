@@ -52,6 +52,7 @@ async def webhook_github(request: Request, mongo=Depends(get_mongo_db)):
     try:
         # Get GitHub event type from headers
         event_type = request.headers.get("X-GitHub-Event", "push")
+        print(f"[EVENT] EVENT TYPE : {event_type}")
         
         request_data = await request.json()
         
