@@ -16,7 +16,7 @@ class Personalizer:
     def __init__(self):
         self._client = get_graphiti()
 
-    async def _encode(self, group_id : str):
+    def _encode(self, group_id : str):
         raw = group_id.lower().strip()
         return hashlib.sha1(raw.encode()).hexdigest()
 
