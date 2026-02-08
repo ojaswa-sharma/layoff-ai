@@ -18,7 +18,8 @@ class Personalizer:
         self,
         message, 
         graph_id : str = None,
-        commit_hash : str = ""
+        commit_hash : str = "",
+        commit_date = None
     ):
         try:
             _ = await self._client.add_episode(
@@ -26,7 +27,8 @@ class Personalizer:
                 episode_body=message,
                 source="text",
                 source_description=f"github commit",
-                group_id=f"{graph_id}"
+                group_id=f"{graph_id}",
+                reference_time=commit_date
             )
         except Exception as e:
             print(f"[ERROR] Error while adding to graphiti: {e}")

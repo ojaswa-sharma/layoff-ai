@@ -216,6 +216,7 @@ async def process_commit_from_webhook(
                     commit_model.message,
                     mongo_db,
                     commit_hash=commit_hash,
+                    commit_date = commit_date
                 )
             )
         else:
