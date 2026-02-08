@@ -38,3 +38,4 @@ class Personalizer:
             )
         except Exception as e:
             print(f"[ERROR] Error while adding to graphiti: {e}")
+            raise e
