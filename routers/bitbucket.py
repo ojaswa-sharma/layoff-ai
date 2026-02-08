@@ -56,6 +56,7 @@ async def webhook_bitbucket(request: Request, mongo=Depends(get_mongo_db)):
     try:
         # Get Bitbucket event type from headers
         event_type = request.headers.get("X-Event-Key", "repo:push")
+        print(f"[EVENT] EVENT TYPE : {event_type}")
         
         request_data = await request.json()
         
