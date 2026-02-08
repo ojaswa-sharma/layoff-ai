@@ -1,5 +1,7 @@
 from services.graphiti.init_client import get_graphiti
 from models.zep_ontology import *
+import hashlib
+
 ENTITIES={
     "Repository": Repository,
     "Bug": Bug,
@@ -14,6 +16,10 @@ class Personalizer:
     def __init__(self):
         self._client = get_graphiti()
 
+    async def _encode(self, group_id : str):
+        raw = group_id.lower().strip()
+        return hashlib.sha1(raw.encode()).hexdigest()
+
     async def add_to_graph(
         self,
         message, 
@@ -27,7 +33,7 @@ class Personalizer:
                 episode_body=message,
                 source="text",
                 source_description=f"github commit",
-                group_id=f"{graph_id.replace('@', '___')}",
+                group_id=self._encode(f"{graph_id}"),
                 reference_time=commit_date
             )
         except Exception as e:
