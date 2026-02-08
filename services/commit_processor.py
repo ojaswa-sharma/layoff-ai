@@ -202,11 +202,10 @@ async def process_commit_from_webhook(
                 logger.debug(f"Commit {commit_hash} was inserted concurrently, skipping")
                 return None
             raise
+        print(f"[DEBUG] SUMMARIZING AND UPLOADING TO MONGO.")
         
         # Trigger AI analysis asynchronously only if we haven't reached the Zep limit
-        should_send, marked_live = await should_send_to_zep(
-            mongo_db, repo_name, repo_full_name, installation_id, context="webhook"
-        )
+        should_send = True
         if should_send:
             asyncio.create_task(
                 summarize_and_upload(
