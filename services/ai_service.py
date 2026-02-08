@@ -2,6 +2,7 @@ from openai import AsyncOpenAI
 import os
 from models.commits import CommitDetails
 from services.zep_store import get_personalizer, botMessage
+from services.graphiti.graphiti_store import get_graphitit_personalizer
 import asyncio
 from dotenv import load_dotenv
 
@@ -174,6 +175,7 @@ async def summarize_and_upload(diff_text, name, mail, repo_name, commit_title, d
     diff["repo_name"] = repo_name
     diff["commit_hash"] = commit_hash
     zep = get_personalizer()
+    graphiti = get_graphitit_personalizer()
     msg = botMessage(role="norole", content=f"""
 Repository: {repo_name}
 Developer: {name}
@@ -188,6 +190,6 @@ Performance Assessment:
     print(f"[DEBUG] Extraction successful, moving to db and zep")
     await asyncio.gather(zep.add_message(user_id = f"user_{mail}", message=msg, thread_id=repo_name, first_name=name, email=mail, repo_name=repo_name),
                          asyncio.to_thread(db.commit_summary.insert_one,diff),
-                         zep.add_to_graph(graph_id=f"{mail}_{repo_name}", message=msg.content)
+                         graphiti.add_to_graph(graph_id=f"{mail}_{repo_name}", message=msg.content, commit_hash=commit_hash)
                          )
 

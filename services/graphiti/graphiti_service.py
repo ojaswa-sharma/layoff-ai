@@ -1,0 +1,32 @@
+from services.graphiti.init_client import get_graphiti
+from models.zep_ontology import *
+ENTITIES={
+    "Repository": Repository,
+    "Bug": Bug,
+    "Feature": Feature,
+    "Commit": Commit,
+    "Changes" : Changes,
+    "Positives" : Positives,
+    "Negatives" : Negatives,
+}
+
+class Personalizer:
+    def __init__(self):
+        self._client = get_graphiti()
+
+    async def add_to_graph(
+        self,
+        message, 
+        graph_id : str = None,
+        commit_hash : str = ""
+    ):
+        try:
+            _ = await self._client.add_episode(
+                name = f"commit_data_{commit_hash}",
+                episode_body=message,
+                source="text",
+                source_description=f"github commit",
+                group_id=f"{graph_id}"
+            )
+        except Exception as e:
+            print(f"[ERROR] Error while adding to graphiti: {e}")
