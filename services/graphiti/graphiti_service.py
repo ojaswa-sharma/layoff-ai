@@ -27,7 +27,7 @@ class Personalizer:
                 episode_body=message,
                 source="text",
                 source_description=f"github commit",
-                group_id=f"{graph_id}",
+                group_id=f"{graph_id.replace('@', '___')}",
                 reference_time=commit_date
             )
         except Exception as e:
