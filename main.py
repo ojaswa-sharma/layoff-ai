@@ -13,7 +13,7 @@ async def lifespan(app : FastAPI):
 
     load_dotenv()
     print(f"[LIFESPAN] Initializing app")
-    startup_()
+    # startup_()
     init_graphiti()
     _graphiti = get_graphiti()
     await _graphiti.build_indices_and_constraints()
