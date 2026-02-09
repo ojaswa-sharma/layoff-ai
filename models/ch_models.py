@@ -8,6 +8,7 @@ from sqlalchemy import Column, String, Integer, DateTime, Text
 from dependencies.ch_db import Base
 # from clickhouse_connect.cc_sqlalchemy import engines
 from clickhouse_connect.cc_sqlalchemy.ddl.tableengine import MergeTree
+from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import LowCardinality
 
 
 class CommitCH(Base):
@@ -15,18 +16,18 @@ class CommitCH(Base):
 
     __table_args__ = (
         MergeTree(
-            order_by=("repository_url", "commit_hash", "installation_id"),
-        ),
+            order_by=("email", "repository_name", "date"),
+        )
     )
 
-    repository_url = Column(String, primary_key=True)
+    repository_url = Column(LowCardinality(String), primary_key=True)
     commit_hash = Column(String, primary_key=True)
     installation_id = Column(Integer, primary_key=True)
 
-    repository_name = Column(String, nullable=False)
+    repository_name = Column(LowCardinality(String), nullable=False)
     message = Column(Text, nullable=False)
-    author = Column(String, nullable=False)
-    email = Column(String, nullable=False)
+    author = Column(LowCardinality(String), nullable=False)
+    email = Column(LowCardinality(String), nullable=False)
     date = Column(DateTime, nullable=False)
     changes = Column(String, nullable=True)
 
@@ -80,9 +81,9 @@ class PRMergeCH(Base):
 
     pr_number = Column(Integer, nullable=False)
     pr_title = Column(String, nullable=False)
-    merged_by = Column(String, nullable=False)
-    merged_by_email = Column(String, nullable=False)
-    repository_name = Column(String, nullable=False)
+    merged_by = Column(LowCardinality(String), nullable=False)
+    merged_by_email = Column(LowCardinality(String), nullable=False)
+    repository_name = Column(LowCardinality(String), nullable=False)
     date = Column(DateTime, nullable=False)
     source = Column(String, nullable=False)
 
@@ -126,8 +127,8 @@ class CommitAnalysisCH(Base):
     )
 
     commit_hash = Column(String, primary_key=True)
-    email = Column(String, primary_key=True)
-    repo_name = Column(String, primary_key=True)
+    email = Column(LowCardinality(String), primary_key=True)
+    repo_name = Column(LowCardinality(String), primary_key=True)
 
     commit_summary = Column(Text, nullable=False)
     work_category = Column(String, nullable=False)

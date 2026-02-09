@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, or_
 from models.ch_models import CommitCH, CommitAnalysisCH
+from sqlalchemy import func, select, literal_column
 
 logger = logging.getLogger(__name__)
 
@@ -156,181 +157,66 @@ async def list_users_ch(
         return []
 
 
-async def list_users_paginated_ch(
-    session: Session,
-    page: int = 1,
-    limit: int = 10,
-) -> Dict[str, Any]:
-    """
-    List users with pagination and repository statistics using SQLAlchemy ORM.
-    
-    Args:
-        session: SQLAlchemy session
-        page: Page number (1-indexed)
-        limit: Number of users per page
-        
-    Returns:
-        Dictionary with pagination metadata and user data
-    """
-    try:
-        from math import ceil
-        
-        skip = (page - 1) * limit
-        
-        # First, get distinct emails with their last commit dates
-        distinct_users_query = session.query(
-            CommitCH.email,
-            func.max(CommitCH.date).label('last_commit'),
-        ).filter(
-            CommitCH.changes.isnot(None),
-            CommitCH.changes != '',
-        ).group_by(
-            CommitCH.email
-        ).order_by(
-            CommitCH.email
+
+async def list_users_paginated_ch(session, page: int = 1, limit: int = 10):
+
+    skip = (page - 1) * limit
+
+    additions = func.JSONExtractInt(CommitCH.changes, 'additions')
+    deletions = func.JSONExtractInt(CommitCH.changes, 'deletions')
+
+    # Repo level aggregation
+    repo_agg = (
+        select(
+            CommitCH.email.label("email"),
+            CommitCH.repository_name.label("repo_name"),
+            func.max(CommitCH.date).label("repo_last_commit"),
+            func.sum(additions).label("repo_additions"),
+            func.sum(deletions).label("repo_deletions"),
+            func.count().label("repo_commits"),
         )
-        
-        # Get total count
-        total_items = distinct_users_query.count()
-        total_pages = ceil(total_items / limit) if total_items else 0
-        
-        # Get paginated users
-        paginated_users = distinct_users_query.offset(skip).limit(limit).all()
-        
-        if not paginated_users:
-            return {
-                "page": page,
-                "limit": limit,
-                "total_items": total_items,
-                "total_pages": total_pages,
-                "data": []
-            }
-        
-        # Get emails for the current page
-        user_emails = [user.email for user in paginated_users]
-        
-        # Get all commits for these users to calculate stats
-        user_commits = session.query(
+        .where(
+            CommitCH.changes.isnot(None),
+            CommitCH.changes != ''
+        )
+        .group_by(
             CommitCH.email,
             CommitCH.repository_name,
-            CommitCH.date,
-            CommitCH.changes,
-        ).filter(
-            CommitCH.email.in_(user_emails),
-            CommitCH.changes.isnot(None),
-            CommitCH.changes != '',
-        ).all()
-        
-        # Aggregate by email and repo
-        repo_stats = {}
-        user_last_commits = {}
-        
-        for commit in user_commits:
-            email = commit.email
-            repo_name = commit.repository_name
-            
-            # Track last commit per user
-            if email not in user_last_commits:
-                user_last_commits[email] = commit.date
-            elif commit.date > user_last_commits[email]:
-                user_last_commits[email] = commit.date
-            
-            # Aggregate repo stats
-            key = (email, repo_name)
-            if key not in repo_stats:
-                repo_stats[key] = {
-                    "last_commit": commit.date,
-                    "additions": 0,
-                    "deletions": 0,
-                    "commits": 0,
-                }
-            
-            if commit.date > repo_stats[key]["last_commit"]:
-                repo_stats[key]["last_commit"] = commit.date
-            
-            changes = _parse_changes_json(commit.changes)
-            repo_stats[key]["additions"] += changes["additions"]
-            repo_stats[key]["deletions"] += changes["deletions"]
-            repo_stats[key]["commits"] += 1
-        
-        now = datetime.now(timezone.utc)
-        users_data = []
-        
-        for user_row in paginated_users:
-            email = user_row.email
-            last_commit = user_last_commits.get(email, user_row.last_commit)
-            
-            # Handle timezone
-            if isinstance(last_commit, datetime):
-                if last_commit.tzinfo is None:
-                    last_commit = last_commit.replace(tzinfo=timezone.utc)
-            else:
-                try:
-                    last_commit = datetime.fromisoformat(str(last_commit))
-                    if last_commit.tzinfo is None:
-                        last_commit = last_commit.replace(tzinfo=timezone.utc)
-                except:
-                    last_commit = now
-            
-            hours = (now - last_commit).total_seconds() / 3600
-            status = "active" if hours <= 6 else "idle" if hours <= 24 else "inactive"
-            
-            # Build repos list for this user
-            repos = []
-            total_additions = 0
-            total_deletions = 0
-            total_commits = 0
-            
-            for (user_email, repo_name), stats in repo_stats.items():
-                if user_email == email:
-                    repo_last = stats["last_commit"]
-                    if isinstance(repo_last, datetime):
-                        if repo_last.tzinfo is None:
-                            repo_last = repo_last.replace(tzinfo=timezone.utc)
-                    else:
-                        try:
-                            repo_last = datetime.fromisoformat(str(repo_last))
-                            if repo_last.tzinfo is None:
-                                repo_last = repo_last.replace(tzinfo=timezone.utc)
-                        except:
-                            repo_last = now
-                    
-                    repo_hours = (now - repo_last).total_seconds() / 3600
-                    repo_status = "active" if repo_hours <= 6 else "idle" if repo_hours <= 24 else "inactive"
-                    
-                    repos.append({
-                        "repo_name": repo_name,
-                        "last_commit": repo_last.isoformat() if isinstance(repo_last, datetime) else str(repo_last),
-                        "repo_additions": stats["additions"],
-                        "repo_deletions": stats["deletions"],
-                        "activity_status": repo_status,
-                    })
-                    
-                    total_additions += stats["additions"]
-                    total_deletions += stats["deletions"]
-                    total_commits += stats["commits"]
-            
-            users_data.append({
-                "email": email,
-                "repos": repos,
-                "changes": {
-                    "additions": total_additions,
-                    "deletions": total_deletions,
-                },
-                "status": status,
-                "total_commits": total_commits,
-            })
-        
-        return {
-            "page": page,
-            "limit": limit,
-            "total_items": total_items,
-            "total_pages": total_pages,
-            "data": users_data,
-        }
-        
-    except Exception as e:
-        logger.error(f"Error listing paginated users from ClickHouse: {e}")
+        )
+        .subquery()
+    )
+
+    # User level aggregation + repo arrays
+    user_agg = (
+        select(
+            repo_agg.c.email,
+            func.max(repo_agg.c.repo_last_commit).label("last_commit"),
+            func.sum(repo_agg.c.repo_additions).label("total_additions"),
+            func.sum(repo_agg.c.repo_deletions).label("total_deletions"),
+            func.sum(repo_agg.c.repo_commits).label("total_commits"),
+
+            # Build repo objects directly in CH
+            func.groupArray(
+                func.map(
+                    literal_column("'repo_name'"), repo_agg.c.repo_name,
+                    literal_column("'last_commit'"), repo_agg.c.repo_last_commit,
+                    literal_column("'repo_additions'"), repo_agg.c.repo_additions,
+                    literal_column("'repo_deletions'"), repo_agg.c.repo_deletions,
+                )
+            ).label("repos"),
+
+            # Total users count (window)
+            func.count().over().label("total_items")
+        )
+        .group_by(repo_agg.c.email)
+        .order_by(repo_agg.c.email)
+        .offset(skip)
+        .limit(limit)
+    )
+
+    rows = session.execute(user_agg).fetchall()
+
+    if not rows:
         return {
             "page": page,
             "limit": limit,
@@ -338,6 +224,51 @@ async def list_users_paginated_ch(
             "total_pages": 0,
             "data": []
         }
+
+    total_items = rows[0].total_items
+    total_pages = (total_items + limit - 1) // limit
+
+    now = datetime.now(timezone.utc)
+
+    data = []
+    for r in rows:
+
+        last_commit = r.last_commit
+        hours = (now - last_commit).total_seconds() / 3600
+        status = "active" if hours <= 6 else "idle" if hours <= 24 else "inactive"
+
+        repos = []
+        for repo in r.repos:
+            repo_last = repo["last_commit"]
+            repo_hours = (now - repo_last).total_seconds() / 3600
+            repo_status = "active" if repo_hours <= 6 else "idle" if repo_hours <= 24 else "inactive"
+
+            repos.append({
+                "repo_name": repo["repo_name"],
+                "last_commit": repo_last.isoformat(),
+                "repo_additions": repo["repo_additions"],
+                "repo_deletions": repo["repo_deletions"],
+                "activity_status": repo_status
+            })
+
+        data.append({
+            "email": r.email,
+            "repos": repos,
+            "changes": {
+                "additions": r.total_additions,
+                "deletions": r.total_deletions,
+            },
+            "status": status,
+            "total_commits": r.total_commits,
+        })
+
+    return {
+        "page": page,
+        "limit": limit,
+        "total_items": total_items,
+        "total_pages": total_pages,
+        "data": data,
+    }
 
 
 async def get_developer_ch(
