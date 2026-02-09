@@ -6,12 +6,14 @@ This router processes:
 - Repository setup: Triggers historical backfill when repository is first connected
 """
 from fastapi import APIRouter, Request, Depends, HTTPException
+import os
+import asyncio
 from sqlalchemy.orm import Session
 from models.commits import SyncStatus
 from services.ch_commit_processor import process_bitbucket_commit_from_webhook
 from services.ch_pr_merge_processor import process_bitbucket_pr_merge
 from services.ch_backfill import get_repository_status_ch, update_repository_status_ch
-from dependencies.ch_db import get_ch_session
+from dependencies.ch_db import get_ch_session, SessionLocal
 import logging
 from datetime import datetime
 import hashlib
@@ -19,6 +21,8 @@ import hashlib
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/bitbucket")
+
+BACKFILL_MAX_COMMITS = int(os.getenv("BACKFILL_MAX_COMMITS", "100"))
 
 
 @router.get('/test-token')
@@ -204,12 +208,26 @@ async def handle_push_event(request_data: dict, session: Session):
                     f"(workspace {workspace_id}) - previous status: {current_status or 'missing'}"
                 )
                 
-                # Note: backfill_bitbucket_repository still uses MongoDB, would need to be updated separately
-                # For now, we'll skip backfill trigger or create a ClickHouse version
-                logger.warning(
-                    f"Backfill trigger skipped - ClickHouse backfill not yet implemented. "
-                    f"Repository {repo_full_name} marked as BACKFILLING."
-                )
+                # Trigger backfill asynchronously (create new session for async task)
+                async def run_backfill():
+                    ch_session = SessionLocal()
+                    try:
+                        from services.ch_backfill import backfill_repository_ch
+                        await backfill_repository_ch(
+                            repo_full_name=repo_full_name,
+                            repo_name=repo_name,
+                            repo_url=repo_url,
+                            installation_id=workspace_id,
+                            session=ch_session,
+                            source="bitbucket",
+                            max_commits=BACKFILL_MAX_COMMITS,
+                        )
+                    except Exception as e:
+                        logger.error(f"Error in async backfill for Bitbucket {repo_full_name}: {e}", exc_info=True)
+                    finally:
+                        ch_session.close()
+                
+                asyncio.create_task(run_backfill())
         else:
             # Another process is already backfilling (race condition handled)
             logger.debug(

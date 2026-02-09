@@ -7,13 +7,14 @@ This router processes:
 """
 from fastapi import APIRouter, Request, Depends, HTTPException
 import os
+import asyncio
 from dotenv import load_dotenv
 from sqlalchemy.orm import Session
-from models.commits import Repository, SyncStatus
+from models.commits import SyncStatus
 from services.ch_commit_processor import process_commit_from_webhook
 from services.ch_pr_merge_processor import process_github_pr_merge
-from services.ch_backfill import get_repository_status_ch, update_repository_status_ch
-from dependencies.ch_db import get_ch_session
+from services.ch_backfill import get_repository_status_ch, update_repository_status_ch, backfill_repository_ch
+from dependencies.ch_db import get_ch_session, SessionLocal
 import logging
 from datetime import datetime
 
@@ -23,6 +24,7 @@ load_dotenv()
 
 router = APIRouter(prefix="/github")
 
+BACKFILL_MAX_COMMITS = os.getenv("BACKFILL_MAX_COMMITS", 100)
 
 def get_github_credentials():
     """Load GitHub App credentials from environment."""
@@ -205,16 +207,26 @@ async def handle_push_event(request_data: dict, session: Session):
                     f"(installation {installation_id}) - previous status: {current_status or 'missing'}"
                 )
                 
-                # Get backfill limits from environment
-                max_commits = os.getenv("BACKFILL_MAX_COMMITS")
-                max_days = os.getenv("BACKFILL_MAX_DAYS")
+                # Trigger backfill asynchronously (create new session for async task)
+                async def run_backfill():
+                    ch_session = SessionLocal()
+                    try:
+                        await backfill_repository_ch(
+                            repo_full_name=repo_full_name,
+                            repo_name=repo_name,
+                            repo_url=repo_url,
+                            installation_id=installation_id,
+                            app_id=app_id,
+                            private_key_pem=pem_data,
+                            session=ch_session,
+                            max_commits=BACKFILL_MAX_COMMITS,  # Hardcoded limit as requested
+                        )
+                    except Exception as e:
+                        logger.error(f"Error in async backfill for {repo_full_name}: {e}", exc_info=True)
+                    finally:
+                        ch_session.close()
                 
-                # Note: backfill_repository still uses MongoDB, would need to be updated separately
-                # For now, we'll skip backfill trigger or create a ClickHouse version
-                logger.warning(
-                    f"Backfill trigger skipped - ClickHouse backfill not yet implemented. "
-                    f"Repository {repo_full_name} marked as BACKFILLING."
-                )
+                asyncio.create_task(run_backfill())
         else:
             # Another process is already backfilling (race condition handled)
             logger.debug(
@@ -282,8 +294,6 @@ async def handle_installation_created(request_data: dict, session: Session):
         }
     
     # Record repositories and trigger backfill
-    backfill_tasks = []
-    
     for repo in repositories:
         repo_full_name = repo["full_name"]
         repo_name = repo["name"]
@@ -296,15 +306,33 @@ async def handle_installation_created(request_data: dict, session: Session):
             {
                 "repository_name": repo_name,
                 "sync_status": SyncStatus.BACKFILLING.value,
-                "backfill_started_at": datetime.utcnow(),
+                "event_time": datetime.utcnow(),
             },
         )
         
-        # Note: backfill_repository still uses MongoDB, would need to be updated separately
-        # For now, we'll skip backfill trigger or create a ClickHouse version
-        logger.warning(
-            f"Backfill trigger skipped for {repo_full_name} - ClickHouse backfill not yet implemented."
-        )
+        # Trigger backfill asynchronously (create new session for async task)
+        # Capture loop variables to avoid closure issues
+        repo_url_value = repo.get("html_url", f"https://github.com/{repo_full_name}")
+        async def run_backfill(rf_name: str, r_name: str, r_url: str):
+            ch_session = SessionLocal()
+            try:
+                await backfill_repository_ch(
+                    repo_full_name=rf_name,
+                    repo_name=r_name,
+                    repo_url=r_url,
+                    installation_id=installation_id,
+                    session=ch_session,
+                    source="github",
+                    max_commits=BACKFILL_MAX_COMMITS,
+                    app_id=app_id,
+                    private_key_pem=pem_data,
+                )
+            except Exception as e:
+                logger.error(f"Error in async backfill for {rf_name}: {e}", exc_info=True)
+            finally:
+                ch_session.close()
+        
+        asyncio.create_task(run_backfill(repo_full_name, repo_name, repo_url_value))
         
         logger.info(
             f"Triggered backfill for {repo_full_name} (installation {installation_id})"
