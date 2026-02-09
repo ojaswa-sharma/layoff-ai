@@ -10,4 +10,4 @@ zep-cloud
 requests
 graphiti-core[falkordb]
 sqlalchemy
-clickhouse-connect
+clickhouse-connect[sqlalchemy]
