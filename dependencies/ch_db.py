@@ -37,7 +37,7 @@ def init_ch_engine():
     
     Connection string format: clickhouse://[user[:password]@][host][:port][/database]
     """
-    global engine, SessionLocal
+    global engine, SessionLocal, Base
     
     try:
         host = os.getenv("CLICKHOUSE_HOST")
@@ -66,6 +66,9 @@ def init_ch_engine():
                 "secure": secure,
             }
         )
+
+        Base.metadata.create_all(bind=engine)
+
         
         # Create session factory
         SessionLocal = sessionmaker(

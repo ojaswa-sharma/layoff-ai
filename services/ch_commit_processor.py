@@ -258,6 +258,7 @@ async def process_commit_from_webhook(
         commit_api_url = f"https://api.github.com/repos/{repo_full_name}/commits/{full_commit_hash}"
         
         try:
+            print(f"[DEBUG] Fetching diff from GitHub API")
             diff_text = await fetch_diff_from_webhook(
                 commit_api_url, installation_id, app_id, private_key_pem
             )

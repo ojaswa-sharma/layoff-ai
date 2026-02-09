@@ -100,14 +100,14 @@ async def update_repository_status_ch(
             repo = RepoSyncEventCH(
                 repository_name=updates.get("repository_name", ""),
                 repository_full_name=repo_full_name,
-                repository_url=updates.get("repository_url", ""),
                 installation_id=installation_id,
                 sync_status=updates.get("sync_status", SyncStatus.BACKFILLING.value),
-                backfill_started_at=updates.get("backfill_started_at"),
-                backfill_completed_at=updates.get("backfill_completed_at"),
+                # backfill_started_at=updates.get("backfill_started_at"),
+                # backfill_completed_at=updates.get("backfill_completed_at"),
                 last_commit_processed=updates.get("last_commit_processed"),
-                total_commits_backfilled=updates.get("total_commits_backfilled", 0),
+                total_commits=updates.get("total_commits", 0),
                 error_message=updates.get("error_message"),
+                event_time=updates.get("event_time"),
             )
             session.add(repo)
             logger.debug(f"Inserted new repository {repo_full_name} into ClickHouse")
@@ -115,17 +115,18 @@ async def update_repository_status_ch(
             # Update existing repository
             if "sync_status" in updates:
                 repo.sync_status = updates["sync_status"]
-            if "backfill_started_at" in updates:
-                repo.backfill_started_at = updates["backfill_started_at"]
-            if "backfill_completed_at" in updates:
-                repo.backfill_completed_at = updates["backfill_completed_at"]
+            # if "backfill_started_at" in updates:
+            #     repo.backfill_started_at = updates["backfill_started_at"]
+            # if "backfill_completed_at" in updates:
+            #     repo.backfill_completed_at = updates["backfill_completed_at"]
             if "last_commit_processed" in updates:
                 repo.last_commit_processed = updates["last_commit_processed"]
-            if "total_commits_backfilled" in updates:
-                repo.total_commits_backfilled = updates["total_commits_backfilled"]
+            if "total_commits" in updates:
+                repo.total_commits = updates["total_commits"]
             if "error_message" in updates:
                 repo.error_message = updates["error_message"]
-            
+            if "event_time" in updates:
+                repo.event_time = updates["event_time"]
             logger.debug(f"Updated repository {repo_full_name} in ClickHouse")
         
         session.commit()

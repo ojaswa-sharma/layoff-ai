@@ -192,7 +192,6 @@ async def handle_push_event(request_data: dict, session: Session):
                 installation_id,
                 {
                     "repository_name": repo_name,
-                    "repository_url": repo_url,
                     "sync_status": SyncStatus.BACKFILLING.value,
                     "backfill_started_at": datetime.utcnow(),
                     "error_message": None,
@@ -288,7 +287,6 @@ async def handle_installation_created(request_data: dict, session: Session):
     for repo in repositories:
         repo_full_name = repo["full_name"]
         repo_name = repo["name"]
-        repo_url = repo.get("html_url", f"https://github.com/{repo_full_name}")
         
         # Create repository record in ClickHouse
         await update_repository_status_ch(
@@ -297,7 +295,6 @@ async def handle_installation_created(request_data: dict, session: Session):
             installation_id,
             {
                 "repository_name": repo_name,
-                "repository_url": repo_url,
                 "sync_status": SyncStatus.BACKFILLING.value,
                 "backfill_started_at": datetime.utcnow(),
             },
