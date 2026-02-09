@@ -158,6 +158,7 @@ async def get_repository_status_ch(
             RepoSyncEventCH.repository_full_name == repo_full_name,
             RepoSyncEventCH.installation_id == installation_id,
         ).first()
+        print(f'[DEBUG] REPO : {repo}')
         
         if not repo:
             return None
