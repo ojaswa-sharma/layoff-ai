@@ -37,7 +37,7 @@ async def check_commit_analysis_exists_ch(
         return False
 
 
-async def insert_commit_analysis_ch(
+def insert_commit_analysis_ch(
     session: Session,
     analysis: Dict[str, Any],
     commit_hash: Optional[str] = None,
@@ -68,7 +68,8 @@ async def insert_commit_analysis_ch(
             return False
         
         # Check if already exists (idempotency)
-        exists = await check_commit_analysis_exists_ch(session, final_commit_hash)
+        # exists = await check_commit_analysis_exists_ch(session, final_commit_hash)
+        exists = False
         if exists:
             logger.debug(f"Commit analysis for {final_commit_hash} already exists, skipping")
             return False

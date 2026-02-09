@@ -309,76 +309,71 @@ async def process_commit_from_webhook(
             return None
         
         # Trigger AI analysis asynchronously only if we haven't reached the Zep limit
-        should_send, marked_live = await should_send_to_zep_ch(
-            session, repo_name, repo_full_name, installation_id, context="webhook"
-        )
-        if should_send:
-            # Create a new session for the async task since the current one will be closed
-            from dependencies.ch_db import SessionLocal
-            from services.zep_store import get_personalizer, botMessage
-            
-            async def analyze_and_store():
-                ch_session = SessionLocal()
-                try:
-                    # Call the AI summarization (this doesn't need DB)
-                    from services.ai_service import summarie_diff, get_openai
-                    diff = await summarie_diff(
-                        get_openai(), diff_text, commit_model.author, 
-                        commit_model.email, repo_name, commit_model.message
-                    )
+        should_send= True
+        asyncio.create_task(summarize_and_upload(diff_text, commit_model.author, commit_model.email, repo_name, commit_model.message, session, commit_hash, commit_date))
+            # Create a new session for the async task since the current one will be closed            
+#             async def analyze_and_store():
+#                 ch_session = SessionLocal()
+#                 try:
+#                     # Call the AI summarization (this doesn't need DB)
+#                     from services.ai_service import summarie_diff, get_openai
+#                     diff = await summarie_diff(
+#                         get_openai(), diff_text, commit_model.author, 
+#                         commit_model.email, repo_name, commit_model.message
+#                     )
                     
-                    # Add metadata
-                    diff["mail"] = commit_model.email
-                    diff["repo_name"] = repo_name
-                    diff["commit_hash"] = commit_hash
+#                     # Add metadata
+#                     diff["mail"] = commit_model.email
+#                     diff["repo_name"] = repo_name
+#                     diff["commit_hash"] = commit_hash
                     
-                    # Send to Zep
-                    zep = get_personalizer()
-                    msg = botMessage(role="norole", content=f"""
-Repository: {repo_name}
-Developer: {commit_model.author}
-Commit hash : {commit_hash}
+#                     # Send to Zep
+#                     zep = get_personalizer()
+#                     msg = botMessage(role="norole", content=f"""
+# Repository: {repo_name}
+# Developer: {commit_model.author}
+# Commit hash : {commit_hash}
 
-Commit Summary:
-{diff.get("commit_summmary")}
+# Commit Summary:
+# {diff.get("commit_summmary")}
 
-Performance Assessment:
-{diff.get("commiters_performance")}
-""")
+# Performance Assessment:
+# {diff.get("commiters_performance")}
+# """)
                     
-                    # Store in ClickHouse and send to Zep
-                    await asyncio.gather(
-                        zep.add_message(
-                            user_id=f"user_{commit_model.email}",
-                            message=msg,
-                            thread_id=repo_name,
-                            first_name=commit_model.author,
-                            email=commit_model.email,
-                            repo_name=repo_name
-                        ),
-                        insert_commit_analysis_ch(
-                            ch_session,
-                            diff,
-                            commit_hash=commit_hash,
-                            email=commit_model.email,
-                            repo_name=repo_name,
-                        ),
-                        zep.add_to_graph(
-                            graph_id=f"{commit_model.email}_{repo_name}",
-                            message=msg.content
-                        )
-                    )
-                finally:
-                    ch_session.close()
+#                     # Store in ClickHouse and send to Zep
+#                     await asyncio.gather(
+#                         zep.add_message(
+#                             user_id=f"user_{commit_model.email}",
+#                             message=msg,
+#                             thread_id=repo_name,
+#                             first_name=commit_model.author,
+#                             email=commit_model.email,
+#                             repo_name=repo_name
+#                         ),
+#                         insert_commit_analysis_ch(
+#                             ch_session,
+#                             diff,
+#                             commit_hash=commit_hash,
+#                             email=commit_model.email,
+#                             repo_name=repo_name,
+#                         ),
+#                         zep.add_to_graph(
+#                             graph_id=f"{commit_model.email}_{repo_name}",
+#                             message=msg.content
+#                         )
+#                     )
+#                 finally:
+#                     ch_session.close()
             
-            asyncio.create_task(analyze_and_store())
-        else:
-            logger.info(
-                f"Commit {commit_hash} for repository {repo_name} stored in database but skipped Zep submission "
-                f"(limit of {ZEP_COMMIT_LIMIT} commits reached or repository is LIVE)"
-            )
+        #     asyncio.create_task(analyze_and_store())
+        # else:
+        #     logger.info(
+        #         f"Commit {commit_hash} for repository {repo_name} stored in database but skipped Zep submission "
+        #         f"(limit of {ZEP_COMMIT_LIMIT} commits reached or repository is LIVE)"
+        #     )
         
-        return commit_model
+        # return commit_model
         
     except Exception as e:
         logger.error(f"Error processing commit {commit_data.get('id', 'unknown')}: {e}")
@@ -512,76 +507,75 @@ async def process_bitbucket_commit_from_webhook(
             return None
         
         # Trigger AI analysis asynchronously only if we haven't reached the Zep limit
-        should_send, marked_live = await should_send_to_zep_ch(
-            session, repo_name, repo_full_name, workspace_id, context="webhook"
-        )
+        should_send = True
         if should_send:
+            asyncio.create_task(summarize_and_upload(diff_text, commit_model.author, commit_model.email, repo_name, commit_model.message, session, commit_hash, commit_date))
             # Create a new session for the async task since the current one will be closed
-            from dependencies.ch_db import SessionLocal
-            from services.zep_store import get_personalizer, botMessage
+#             from dependencies.ch_db import SessionLocal
+#             from services.zep_store import get_personalizer, botMessage
             
-            async def analyze_and_store():
-                ch_session = SessionLocal()
-                try:
-                    # Call the AI summarization (this doesn't need DB)
-                    from services.ai_service import summarie_diff, get_openai
-                    diff = await summarie_diff(
-                        get_openai(), diff_text, commit_model.author, 
-                        commit_model.email, repo_name, commit_model.message
-                    )
+#             async def analyze_and_store():
+#                 ch_session = SessionLocal()
+#                 try:
+#                     # Call the AI summarization (this doesn't need DB)
+#                     from services.ai_service import summarie_diff, get_openai
+#                     diff = await summarie_diff(
+#                         get_openai(), diff_text, commit_model.author, 
+#                         commit_model.email, repo_name, commit_model.message
+#                     )
                     
-                    # Add metadata
-                    diff["mail"] = commit_model.email
-                    diff["repo_name"] = repo_name
-                    diff["commit_hash"] = commit_hash
+#                     # Add metadata
+#                     diff["mail"] = commit_model.email
+#                     diff["repo_name"] = repo_name
+#                     diff["commit_hash"] = commit_hash
                     
-                    # Send to Zep
-                    zep = get_personalizer()
-                    msg = botMessage(role="norole", content=f"""
-Repository: {repo_name}
-Developer: {commit_model.author}
-Commit hash : {commit_hash}
+#                     # Send to Zep
+#                     zep = get_personalizer()
+#                     msg = botMessage(role="norole", content=f"""
+# Repository: {repo_name}
+# Developer: {commit_model.author}
+# Commit hash : {commit_hash}
 
-Commit Summary:
-{diff.get("commit_summmary")}
+# Commit Summary:
+# {diff.get("commit_summmary")}
 
-Performance Assessment:
-{diff.get("commiters_performance")}
-""")
+# Performance Assessment:
+# {diff.get("commiters_performance")}
+# """)
                     
-                    # Store in ClickHouse and send to Zep
-                    await asyncio.gather(
-                        zep.add_message(
-                            user_id=f"user_{commit_model.email}",
-                            message=msg,
-                            thread_id=repo_name,
-                            first_name=commit_model.author,
-                            email=commit_model.email,
-                            repo_name=repo_name
-                        ),
-                        insert_commit_analysis_ch(
-                            ch_session,
-                            diff,
-                            commit_hash=commit_hash,
-                            email=commit_model.email,
-                            repo_name=repo_name,
-                        ),
-                        zep.add_to_graph(
-                            graph_id=f"{commit_model.email}_{repo_name}",
-                            message=msg.content
-                        )
-                    )
-                finally:
-                    ch_session.close()
+#                     # Store in ClickHouse and send to Zep
+#                     await asyncio.gather(
+#                         zep.add_message(
+#                             user_id=f"user_{commit_model.email}",
+#                             message=msg,
+#                             thread_id=repo_name,
+#                             first_name=commit_model.author,
+#                             email=commit_model.email,
+#                             repo_name=repo_name
+#                         ),
+#                         insert_commit_analysis_ch(
+#                             ch_session,
+#                             diff,
+#                             commit_hash=commit_hash,
+#                             email=commit_model.email,
+#                             repo_name=repo_name,
+#                         ),
+#                         zep.add_to_graph(
+#                             graph_id=f"{commit_model.email}_{repo_name}",
+#                             message=msg.content
+#                         )
+#                     )
+#                 finally:
+#                     ch_session.close()
             
-            asyncio.create_task(analyze_and_store())
-        else:
-            logger.info(
-                f"Commit {commit_hash} for repository {repo_name} stored in database but skipped Zep submission "
-                f"(limit of {ZEP_COMMIT_LIMIT} commits reached or repository is LIVE)"
-            )
+#             asyncio.create_task(analyze_and_store())
+#         else:
+#             logger.info(
+#                 f"Commit {commit_hash} for repository {repo_name} stored in database but skipped Zep submission "
+#                 f"(limit of {ZEP_COMMIT_LIMIT} commits reached or repository is LIVE)"
+#             )
         
-        return commit_model
+#         return commit_model
         
     except Exception as e:
         logger.error(f"Error processing Bitbucket commit {commit_data.get('hash', 'unknown')}: {e}", exc_info=True)

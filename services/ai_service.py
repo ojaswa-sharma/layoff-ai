@@ -6,6 +6,8 @@ from services.graphiti.graphiti_store import get_graphitit_personalizer
 import asyncio
 from dotenv import load_dotenv
 from fastapi.concurrency import run_in_threadpool
+from services.ch_ai_service import insert_commit_analysis_ch
+
 
 load_dotenv()
 
@@ -172,9 +174,10 @@ STRICT COMPLIANCE IS REQUIRED AT ALL TIMES.
 
 async def summarize_and_upload(diff_text, name, mail, repo_name, commit_title, db, commit_hash = None, commit_date = None):
     diff = await summarie_diff(get_openai(), diff_text, name, mail, repo_name, commit_title)
-    diff["mail"] = mail
-    diff["repo_name"] = repo_name
-    diff["commit_hash"] = commit_hash
+    # actual_diff = diff.copy()
+    # diff["mail"] = mail
+    # diff["repo_name"] = repo_name
+    # diff["commit_hash"] = commit_hash
     zep = get_personalizer()
     graphiti = get_graphitit_personalizer()
     msg = botMessage(role="norole", content=f"""
@@ -190,6 +193,7 @@ Performance Assessment:
 """)
     print(f"[DEBUG] Extraction successful, moving to db and zep")
     await graphiti.add_message(user_id = f"user_{mail}", message=msg, thread_id=repo_name, first_name=name, email=mail, repo_name=repo_name, date=commit_date)
-    await run_in_threadpool(db.commit_summary.insert_one,diff)
+    # await run_in_threadpool(db.commit_summary.insert_one,diff)
+    await run_in_threadpool(insert_commit_analysis_ch,db, diff, commit_hash, mail, repo_name)
     await graphiti.add_to_graph(graph_id=f"{mail}_{repo_name}", message=msg.content, commit_hash=commit_hash, commit_date = commit_date)
 
