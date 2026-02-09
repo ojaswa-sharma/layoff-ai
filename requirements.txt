@@ -9,3 +9,4 @@ openai
 zep-cloud
 requests
 graphiti-core[falkordb]
+sqlalchemy
