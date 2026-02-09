@@ -162,11 +162,8 @@ async def list_users_paginated_ch(session, page: int = 1, limit: int = 10):
 
     skip = (page - 1) * limit
 
-    # additions = func.JSONExtractInt(CommitCH.changes, 'additions')
-    # deletions = func.JSONExtractInt(CommitCH.changes, 'deletions')
     additions = CommitCH.additions
     deletions = CommitCH.deletions
-
 
     # Repo level aggregation
     repo_agg = (
@@ -189,7 +186,7 @@ async def list_users_paginated_ch(session, page: int = 1, limit: int = 10):
         .subquery()
     )
 
-    # User level aggregation + repo arrays
+    # User level aggregation with separate arrays
     user_agg = (
         select(
             repo_agg.c.email,
@@ -198,15 +195,11 @@ async def list_users_paginated_ch(session, page: int = 1, limit: int = 10):
             func.sum(repo_agg.c.repo_deletions).label("total_deletions"),
             func.sum(repo_agg.c.repo_commits).label("total_commits"),
 
-            # Build repo objects directly in CH
-            func.groupArray(
-                func.map(
-                    literal_column("'repo_name'"), repo_agg.c.repo_name,
-                    literal_column("'last_commit'"), repo_agg.c.repo_last_commit,
-                    literal_column("'repo_additions'"), repo_agg.c.repo_additions,
-                    literal_column("'repo_deletions'"), repo_agg.c.repo_deletions,
-                )
-            ).label("repos"),
+            # Use separate arrays to avoid type mismatch
+            func.groupArray(repo_agg.c.repo_name).label("repo_names"),
+            func.groupArray(repo_agg.c.repo_last_commit).label("repo_last_commits"),
+            func.groupArray(repo_agg.c.repo_additions).label("repo_additions_list"),
+            func.groupArray(repo_agg.c.repo_deletions).label("repo_deletions_list"),
 
             # Total users count (window)
             func.count().over().label("total_items")
@@ -240,17 +233,22 @@ async def list_users_paginated_ch(session, page: int = 1, limit: int = 10):
         hours = (now - last_commit).total_seconds() / 3600
         status = "active" if hours <= 6 else "idle" if hours <= 24 else "inactive"
 
+        # Reconstruct repos from parallel arrays
         repos = []
-        for repo in r.repos:
-            repo_last = repo["last_commit"]
-            repo_hours = (now - repo_last).total_seconds() / 3600
+        for name, commit, additions, deletions in zip(
+            r.repo_names,
+            r.repo_last_commits,
+            r.repo_additions_list,
+            r.repo_deletions_list
+        ):
+            repo_hours = (now - commit).total_seconds() / 3600
             repo_status = "active" if repo_hours <= 6 else "idle" if repo_hours <= 24 else "inactive"
 
             repos.append({
-                "repo_name": repo["repo_name"],
-                "last_commit": repo_last.isoformat(),
-                "repo_additions": repo["repo_additions"],
-                "repo_deletions": repo["repo_deletions"],
+                "repo_name": name,
+                "last_commit": commit.isoformat(),
+                "repo_additions": additions,
+                "repo_deletions": deletions,
                 "activity_status": repo_status
             })
 
@@ -272,7 +270,6 @@ async def list_users_paginated_ch(session, page: int = 1, limit: int = 10):
         "total_pages": total_pages,
         "data": data,
     }
-
 
 async def get_developer_ch(
     session: Session,
