@@ -74,7 +74,8 @@ def init_ch_engine():
         SessionLocal = sessionmaker(
             autocommit=False,
             autoflush=False,
-            bind=engine
+            bind=engine,
+            expire_on_commit=False
         )
         
         logger.info("SQLAlchemy ClickHouse engine initialized successfully")
