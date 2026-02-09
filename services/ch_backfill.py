@@ -149,7 +149,7 @@ async def get_repository_status_ch(
     try:
         # Use raw SQL to bypass ORM issues
         from sqlalchemy import text
-        debug_table_schema()
+        debug_table_schema(session=session)
         
         query = text("""
             SELECT 
