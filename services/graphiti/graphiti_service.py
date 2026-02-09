@@ -16,6 +16,17 @@ ENTITIES={
     "Negatives" : Negatives,
 }
 
+DEV_ENTITES = {
+    "Repository": Repository,
+    "Bug": Bug,
+    "Feature": Feature,
+    "Commit": Commit,
+    "Changes" : Changes,
+    "Positives" : Positives,
+    "Negatives" : Negatives,
+    "Developer" : Developer
+}
+
 EDGES = {
     "REPOSITORY_CONTAINS_BUG": RepositoryContainsBug,
     "REPOSITORY_CONTAINS_FEATURE": RepositoryContainsFeature,
@@ -60,3 +71,21 @@ class Personalizer:
         except Exception as e:
             print(f"[ERROR] Error while adding to graphiti: {e}")
             raise e
+
+    async def add_message(self, user_id, message, thread_id, first_name = "", last_name = "", repo_name = None, email = None, date= None):
+
+        text = message.content
+        # await self._client.add_episode(user_id=user_id, data = text[:min(len(text), 9999)], type="text", source_description="Data from github summarized by ai")
+        await self._client.add_episode(
+            name="commit data",
+            episode_body=text,
+                source=EpisodeType.text,
+                source_description=f"Commit tracked",
+                group_id=self._encode(f"{user_id}"),
+                reference_time=date or datetime.now(timezone.utc),
+                entity_types=DEV_ENTITES,
+                edge_types=EDGES,
+                edge_type_map=EDGE_MAP
+        )
+
+        return {"status" : "success"} 
