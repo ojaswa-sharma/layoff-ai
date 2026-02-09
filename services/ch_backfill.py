@@ -145,37 +145,40 @@ async def get_repository_status_ch(
 ) -> Optional[Dict[str, Any]]:
     """
     Get repository status from ClickHouse using SQLAlchemy ORM.
-    
-    Args:
-        session: SQLAlchemy session
-        repo_full_name: Repository full name
-        installation_id: Installation ID
-        
-    Returns:
-        Dictionary with repository status or None if not found
     """
     try:
-        # repo = session.query(RepoSyncEventCH).filter(
-        #     RepoSyncEventCH.repository_full_name == repo_full_name,
-        #     RepoSyncEventCH.installation_id == installation_id,
-        # ).first()
-        repo = (
-            session.execute(
-                select(RepoSyncEventCH).where(
-                    RepoSyncEventCH.repository_full_name == repo_full_name,
-                    RepoSyncEventCH.installation_id == installation_id,
-                )
-            )
-            .scalars()
-            .first()
+        # Explicitly select all columns
+        stmt = select(
+            RepoSyncEventCH.repository_full_name,
+            RepoSyncEventCH.installation_id,
+            RepoSyncEventCH.repository_name,
+            RepoSyncEventCH.sync_status,
+            RepoSyncEventCH.last_commit_processed,
+            RepoSyncEventCH.total_commits,
+            RepoSyncEventCH.error_message,
+            RepoSyncEventCH.event_time,
+        ).where(
+            RepoSyncEventCH.repository_full_name == repo_full_name,
+            RepoSyncEventCH.installation_id == installation_id,
         )
-
-        print(f'[DEBUG] REPO : {repo}')
         
-        if not repo:
+        result = session.execute(stmt).first()
+        
+        print(f'[DEBUG] RESULT: {result}')
+        
+        if not result:
             return None
         
-        return repo.to_dict()
+        return {
+            "repository_full_name": result[0],
+            "installation_id": result[1],
+            "repository_name": result[2],
+            "sync_status": result[3],
+            "last_commit_processed": result[4],
+            "total_commits": result[5],
+            "error_message": result[6],
+            "event_time": result[7],
+        }
     except Exception as e:
         logger.error(f"Error getting repository status from ClickHouse: {e}")
         return None
