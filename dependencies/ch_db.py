@@ -48,7 +48,8 @@ def init_ch_engine():
         
         # Build connection string
         # For secure connections, use clickhouses://
-        protocol = "clickhouses" if secure else "clickhouse"
+        # protocol = "clickhouses" if secure else "clickhouse"
+        protocol= "clickhousedb"
         
         if password:
             connection_string = f"{protocol}://{username}:{password}@{host}:{port}/default"
