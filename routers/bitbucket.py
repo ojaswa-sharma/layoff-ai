@@ -201,14 +201,12 @@ async def handle_push_event(request_data: dict, session: Session):
                 },
             )
             
-            # If update succeeded, trigger backfill
             if success:
                 logger.info(
                     f"Lazy backfill triggered for Bitbucket {repo_full_name} "
                     f"(workspace {workspace_id}) - previous status: {current_status or 'missing'}"
                 )
                 
-                # Trigger backfill asynchronously (create new session for async task)
                 async def run_backfill():
                     ch_session = SessionLocal()
                     try:
