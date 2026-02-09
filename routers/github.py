@@ -14,7 +14,7 @@ from models.commits import SyncStatus
 from services.ch_commit_processor import process_commit_from_webhook
 from services.ch_pr_merge_processor import process_github_pr_merge
 from services.ch_backfill import get_repository_status_ch, update_repository_status_ch, backfill_repository_ch
-from dependencies.ch_db import get_ch_session, SessionLocal
+from dependencies.ch_db import get_ch_session, SessionLocal, get_ch_session_direct
 import logging
 from datetime import datetime
 
@@ -209,7 +209,9 @@ async def handle_push_event(request_data: dict, session: Session):
                 
                 # Trigger backfill asynchronously (create new session for async task)
                 async def run_backfill():
-                    ch_session = SessionLocal()
+                    # ch_session = SessionLocal()
+                    ch_session = get_ch_session_direct()
+
                     try:
                         await backfill_repository_ch(
                             repo_full_name=repo_full_name,

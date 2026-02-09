@@ -112,3 +112,8 @@ def get_ch_db():
     Alias for get_ch_session() for backward compatibility.
     """
     return get_ch_session()
+
+def get_ch_session_direct() -> Session:
+    if SessionLocal is None:
+        init_ch_engine()
+    return SessionLocal()

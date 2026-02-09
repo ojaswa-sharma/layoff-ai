@@ -13,7 +13,7 @@ from models.commits import SyncStatus
 from services.ch_commit_processor import process_bitbucket_commit_from_webhook
 from services.ch_pr_merge_processor import process_bitbucket_pr_merge
 from services.ch_backfill import get_repository_status_ch, update_repository_status_ch
-from dependencies.ch_db import get_ch_session, SessionLocal
+from dependencies.ch_db import get_ch_session, SessionLocal, get_ch_db, get_ch_session_direct
 import logging
 from datetime import datetime
 import hashlib
@@ -208,7 +208,9 @@ async def handle_push_event(request_data: dict, session: Session):
                 )
                 
                 async def run_backfill():
-                    ch_session = SessionLocal()
+                    ch_session = get_ch_session_direct()
+                    # ch_session = get_ch_db()
+                    # ch_session = await anext(get_ch_session())
                     try:
                         from services.ch_backfill import backfill_repository_ch
                         await backfill_repository_ch(
