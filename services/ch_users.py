@@ -162,8 +162,11 @@ async def list_users_paginated_ch(session, page: int = 1, limit: int = 10):
 
     skip = (page - 1) * limit
 
-    additions = func.JSONExtractInt(CommitCH.changes, 'additions')
-    deletions = func.JSONExtractInt(CommitCH.changes, 'deletions')
+    # additions = func.JSONExtractInt(CommitCH.changes, 'additions')
+    # deletions = func.JSONExtractInt(CommitCH.changes, 'deletions')
+    additions = CommitCH.additions
+    deletions = CommitCH.deletions
+
 
     # Repo level aggregation
     repo_agg = (

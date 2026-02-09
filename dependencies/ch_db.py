@@ -7,7 +7,7 @@ for ClickHouse database operations using the clickhouse-sqlalchemy dialect.
 import os
 import logging
 from typing import Generator
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session, scoped_session
 from sqlalchemy.ext.declarative import declarative_base
 from dotenv import load_dotenv
@@ -22,6 +22,21 @@ Base = declarative_base()
 # Global engine and session factory
 engine = None
 SessionLocal = None
+
+def add_materialized_change_columns(engine):
+    with engine.begin() as conn:
+        conn.execute(text("""
+            ALTER TABLE commits
+            ADD COLUMN IF NOT EXISTS additions Int32
+            MATERIALIZED JSONExtractInt(changes, 'additions')
+        """))
+        conn.execute(text("""
+            ALTER TABLE commits
+            ADD COLUMN IF NOT EXISTS deletions Int32
+            MATERIALIZED JSONExtractInt(changes, 'deletions')
+        """))
+        conn.execute(text("OPTIMIZE TABLE commits FINAL"))
+
 
 
 def init_ch_engine():
@@ -66,6 +81,8 @@ def init_ch_engine():
                 "secure": secure,
             }
         )
+
+        add_materialized_change_columns(engine)
 
         Base.metadata.create_all(bind=engine)
 

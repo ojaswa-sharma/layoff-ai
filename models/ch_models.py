@@ -4,11 +4,11 @@ SQLAlchemy declarative models for ClickHouse tables.
 
 import json
 from typing import Dict, Any
-from sqlalchemy import Column, String, Integer, DateTime, Text
+from sqlalchemy import Column, Integer, DateTime, text, Computed
 from dependencies.ch_db import Base
 # from clickhouse_connect.cc_sqlalchemy import engines
 from clickhouse_connect.cc_sqlalchemy.ddl.tableengine import MergeTree
-from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import LowCardinality
+from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import LowCardinality, String
 
 
 class CommitCH(Base):
@@ -16,8 +16,8 @@ class CommitCH(Base):
 
     __table_args__ = (
         MergeTree(
-            order_by=("email", "repository_name", "date"),
-        )
+            order_by=("repository_name", "email", "date")
+        ),
     )
 
     repository_url = Column(LowCardinality(String), primary_key=True)
@@ -25,11 +25,14 @@ class CommitCH(Base):
     installation_id = Column(Integer, primary_key=True)
 
     repository_name = Column(LowCardinality(String), nullable=False)
-    message = Column(Text, nullable=False)
+    message = Column(String, nullable=False)
     author = Column(LowCardinality(String), nullable=False)
     email = Column(LowCardinality(String), nullable=False)
     date = Column(DateTime, nullable=False)
     changes = Column(String, nullable=True)
+    additions = Column(Integer, Computed("JSONExtractInt(changes, 'additions')"))
+    deletions = Column(Integer, Computed("JSONExtractInt(changes, 'deletions')"))
+
 
     def to_dict(self) -> Dict[str, Any]:
         changes_dict = None
@@ -130,10 +133,10 @@ class CommitAnalysisCH(Base):
     email = Column(LowCardinality(String), primary_key=True)
     repo_name = Column(LowCardinality(String), primary_key=True)
 
-    commit_summary = Column(Text, nullable=False)
+    commit_summary = Column(String, nullable=False)
     work_category = Column(String, nullable=False)
     department = Column(String, nullable=False)
-    commiters_performance = Column(Text, nullable=False)
+    commiters_performance = Column(String, nullable=False)
     work_type = Column(String, nullable=False)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -178,7 +181,7 @@ class RepoSyncEventCH(Base):
     sync_status = Column(String, nullable=False)
     last_commit_processed = Column(String, nullable=True)
     total_commits = Column(Integer, nullable=False, default=0)
-    error_message = Column(Text, nullable=True)
+    error_message = Column(String, nullable=True)
     event_time = Column(DateTime, nullable=True)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -205,3 +208,4 @@ class RepoSyncEventCH(Base):
             error_message=repo.error_message,
             event_time=repo.event_time,
         )
+
