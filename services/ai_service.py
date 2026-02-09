@@ -194,6 +194,6 @@ Performance Assessment:
     print(f"[DEBUG] Extraction successful, moving to db and zep")
     await graphiti.add_message(user_id = f"user_{mail}", message=msg, thread_id=repo_name, first_name=name, email=mail, repo_name=repo_name, date=commit_date)
     # await run_in_threadpool(db.commit_summary.insert_one,diff)
-    await run_in_threadpool(insert_commit_analysis_ch,db, diff, commit_hash, mail, repo_name)
+    insert_commit_analysis_ch(db, diff, commit_hash, mail, repo_name)
     await graphiti.add_to_graph(graph_id=f"{mail}_{repo_name}", message=msg.content, commit_hash=commit_hash, commit_date = commit_date)
 

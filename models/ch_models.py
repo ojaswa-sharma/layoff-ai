@@ -16,7 +16,7 @@ class CommitCH(Base):
 
     __table_args__ = (
         MergeTree(
-            order_by=("repository_name", "email", "date")
+            order_by=("email" ,"repository_name", "date")
         ),
     )
 
