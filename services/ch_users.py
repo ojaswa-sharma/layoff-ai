@@ -224,7 +224,7 @@ async def list_users_paginated_ch(session, page: int = 1, limit: int = 10):
     total_items = rows[0].total_items
     total_pages = (total_items + limit - 1) // limit
 
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
 
     data = []
     for r in rows:
