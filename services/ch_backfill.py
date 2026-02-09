@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from models.commits import Commit, Repository, SyncStatus
 from models.ch_models import CommitCH, RepoSyncEventCH
 from services.ch_commit_processor import check_commit_exists_ch
+from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
 
@@ -154,10 +155,21 @@ async def get_repository_status_ch(
         Dictionary with repository status or None if not found
     """
     try:
-        repo = session.query(RepoSyncEventCH).filter(
-            RepoSyncEventCH.repository_full_name == repo_full_name,
-            RepoSyncEventCH.installation_id == installation_id,
-        ).first()
+        # repo = session.query(RepoSyncEventCH).filter(
+        #     RepoSyncEventCH.repository_full_name == repo_full_name,
+        #     RepoSyncEventCH.installation_id == installation_id,
+        # ).first()
+        repo = (
+            session.execute(
+                select(RepoSyncEventCH).where(
+                    RepoSyncEventCH.repository_full_name == repo_full_name,
+                    RepoSyncEventCH.installation_id == installation_id,
+                )
+            )
+            .scalars()
+            .first()
+        )
+
         print(f'[DEBUG] REPO : {repo}')
         
         if not repo:
