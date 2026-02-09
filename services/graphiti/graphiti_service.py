@@ -1,5 +1,6 @@
 from services.graphiti.init_client import get_graphiti
-from models.zep_ontology import *
+# from models.zep_ontology import *
+from models.graphiti_ontology import *
 from graphiti_core.nodes import EpisodeType
 import hashlib
 from datetime import datetime
@@ -37,7 +38,8 @@ class Personalizer:
                 source=EpisodeType.text,
                 source_description=f"github commit",
                 group_id=self._encode(f"{graph_id}"),
-                reference_time=commit_date or datetime.now(timezone.utc)
+                reference_time=commit_date or datetime.now(timezone.utc),
+                entity_types=ENTITIES,
             )
         except Exception as e:
             print(f"[ERROR] Error while adding to graphiti: {e}")
