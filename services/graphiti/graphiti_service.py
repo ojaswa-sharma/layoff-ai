@@ -47,10 +47,10 @@ class Personalizer:
         self._client = get_graphiti()
 
     def _encode(self, group_id : str):
-        print(f"[DEBUG] BEFORE ENCODING : {group_id}")
+        # print(f"[DEBUG] BEFORE ENCODING : {group_id}")
         raw = group_id.lower().strip()
         _id = hashlib.sha1(raw.encode()).hexdigest()
-        print(f"[DEBUG] ENCODED ID : {_id}")
+        # print(f"[DEBUG] ENCODED ID : {_id}")
         return _id
 
     async def add_to_graph(
@@ -79,7 +79,7 @@ class Personalizer:
     async def add_message(self, user_id, message, thread_id, first_name = "", last_name = "", repo_name = None, email = None, date= None):
 
         text = message.content
-        print(f"[DEBUG] ADDING TEXT : {text[:100]}...")
+        # print(f"[DEBUG] ADDING TEXT : {text[:100]}...")
         # await self._client.add_episode(user_id=user_id, data = text[:min(len(text), 9999)], type="text", source_description="Data from github summarized by ai")
         await self._client.add_episode(
             name=f"commit_data__{datetime.now().timestamp()}",
