@@ -5,6 +5,7 @@ from services.zep_store import get_personalizer, botMessage
 from services.graphiti.graphiti_store import get_graphitit_personalizer
 import asyncio
 from dotenv import load_dotenv
+from fastapi.concurrency import run_in_threadpool
 
 load_dotenv()
 
@@ -188,8 +189,7 @@ Performance Assessment:
 {diff.get("commiters_performance")}
 """)
     print(f"[DEBUG] Extraction successful, moving to db and zep")
-    await asyncio.gather(graphiti.add_message(user_id = f"user_{mail}", message=msg, thread_id=repo_name, first_name=name, email=mail, repo_name=repo_name, date=commit_date),
-                         asyncio.to_thread(db.commit_summary.insert_one,diff),
-                         graphiti.add_to_graph(graph_id=f"{mail}_{repo_name}", message=msg.content, commit_hash=commit_hash, commit_date = commit_date)
-                         )
+    await graphiti.add_message(user_id = f"user_{mail}", message=msg, thread_id=repo_name, first_name=name, email=mail, repo_name=repo_name, date=commit_date)
+    await run_in_threadpool(db.commit_summary.insert_one,diff)
+    await graphiti.add_to_graph(graph_id=f"{mail}_{repo_name}", message=msg.content, commit_hash=commit_hash, commit_date = commit_date)
 
