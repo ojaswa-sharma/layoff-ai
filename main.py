@@ -10,6 +10,7 @@ def startup_():
     init_mongo()
 
 async def lifespan(app : FastAPI):
+
     load_dotenv()
     print(f"[LIFESPAN] Initializing app")
     startup_()
