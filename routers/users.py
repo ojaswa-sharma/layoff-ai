@@ -421,6 +421,7 @@ async def get_developer(
         if project:
             response["project_data"] = project_data
 
+        print("Changes done")
         return response
 
     except Exception as e:
