@@ -22,6 +22,11 @@ class CommitCH(Base):
       author, email, date, diff, changes
     """
     __tablename__ = "commits"
+
+    __table_args__ = {
+        'clickhouse_engine': 'MergeTree()',
+        'clickhouse_order_by': ('repository_url', 'commit_hash', 'installation_id'),
+    }
     
     # Composite primary key for SQLAlchemy (ClickHouse doesn't enforce PKs)
     # This combination uniquely identifies a commit
@@ -95,6 +100,11 @@ class PRMergeCH(Base):
       repository_name, repository_url, date, installation_id, source
     """
     __tablename__ = "pr_merges"
+
+    __table_args__ = {
+        'clickhouse_engine': 'MergeTree()',
+        'clickhouse_order_by': ('repository_url', 'merge_commit_hash', 'installation_id'),
+    }
     
     # Composite primary key for SQLAlchemy (ClickHouse doesn't enforce PKs)
     repository_url = Column(String, nullable=False, primary_key=True)
@@ -156,6 +166,11 @@ class CommitAnalysisCH(Base):
       department, commiters_performance, work_type
     """
     __tablename__ = "commit_analysis"
+
+    __table_args__ = {
+        'clickhouse_engine': 'MergeTree()',
+        'clickhouse_order_by': ('commit_hash', 'email', 'repo_name'),
+    }
     
     # Composite primary key for SQLAlchemy (ClickHouse doesn't enforce PKs)
     commit_hash = Column(String, nullable=False, primary_key=True)
@@ -206,18 +221,22 @@ class RepoSyncEventCH(Base):
     SQLAlchemy model for repo_sync_events table in ClickHouse.
     
     Maps to the repo_sync_events table with columns:
-    - repository_name, repository_full_name, repository_url, installation_id,
+    - repository_name, repository_full_name, installation_id,
       sync_status, backfill_started_at, backfill_completed_at,
       last_commit_processed, total_commits_backfilled, error_message
     """
     __tablename__ = "repo_sync_events"
+
+    __table_args__ = {
+        'clickhouse_engine': 'MergeTree()',
+        'clickhouse_order_by': ('repository_full_name', 'installation_id'),
+    }
     
     # Composite primary key for SQLAlchemy (ClickHouse doesn't enforce PKs)
-    repository_url = Column(String, nullable=False, primary_key=True)
+    repository_full_name = Column(String, nullable=False, primary_key=True)
     installation_id = Column(Integer, nullable=False, primary_key=True)
     
     repository_name = Column(String, nullable=False)
-    repository_full_name = Column(String, nullable=False)
     sync_status = Column(String, nullable=False)  # "BACKFILLING", "LIVE", "FAILED"
     # backfill_started_at = Column(DateTime, nullable=True)
     # backfill_completed_at = Column(DateTime, nullable=True)
@@ -231,7 +250,6 @@ class RepoSyncEventCH(Base):
         return {
             "repository_name": self.repository_name,
             "repository_full_name": self.repository_full_name,
-            "repository_url": self.repository_url,
             "installation_id": self.installation_id,
             "sync_status": self.sync_status,
             # "backfill_started_at": self.backfill_started_at,
@@ -254,7 +272,6 @@ class RepoSyncEventCH(Base):
         return cls(
             repository_name=repo.repository_name,
             repository_full_name=repo.repository_full_name,
-            repository_url=repo.repository_url,
             installation_id=repo.installation_id,
             sync_status=repo.sync_status.value if hasattr(repo.sync_status, 'value') else str(repo.sync_status),
             # backfill_started_at=repo.backfill_started_at,
