@@ -219,11 +219,12 @@ class RepoSyncEventCH(Base):
     repository_name = Column(String, nullable=False)
     repository_full_name = Column(String, nullable=False)
     sync_status = Column(String, nullable=False)  # "BACKFILLING", "LIVE", "FAILED"
-    backfill_started_at = Column(DateTime, nullable=True)
-    backfill_completed_at = Column(DateTime, nullable=True)
+    # backfill_started_at = Column(DateTime, nullable=True)
+    # backfill_completed_at = Column(DateTime, nullable=True)
     last_commit_processed = Column(String, nullable=True)
     total_commits_backfilled = Column(Integer, nullable=False, default=0)
     error_message = Column(Text, nullable=True)
+    event_time = Column(DateTime, nullable=True)
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert model instance to dictionary."""
@@ -233,11 +234,12 @@ class RepoSyncEventCH(Base):
             "repository_url": self.repository_url,
             "installation_id": self.installation_id,
             "sync_status": self.sync_status,
-            "backfill_started_at": self.backfill_started_at,
-            "backfill_completed_at": self.backfill_completed_at,
+            # "backfill_started_at": self.backfill_started_at,
+            # "backfill_completed_at": self.backfill_completed_at,
             "last_commit_processed": self.last_commit_processed,
             "total_commits_backfilled": self.total_commits_backfilled,
             "error_message": self.error_message,
+            "event_time": self.event_time,
         }
     
     @classmethod
@@ -255,10 +257,11 @@ class RepoSyncEventCH(Base):
             repository_url=repo.repository_url,
             installation_id=repo.installation_id,
             sync_status=repo.sync_status.value if hasattr(repo.sync_status, 'value') else str(repo.sync_status),
-            backfill_started_at=repo.backfill_started_at,
-            backfill_completed_at=repo.backfill_completed_at,
+            # backfill_started_at=repo.backfill_started_at,
+            # backfill_completed_at=repo.backfill_completed_at,
             last_commit_processed=repo.last_commit_processed,
             total_commits_backfilled=repo.total_commits_backfilled,
             error_message=repo.error_message,
+            event_time=repo.event_time,
         )
 
