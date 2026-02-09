@@ -78,7 +78,8 @@ async def update_repository_status_ch(
     updates: Dict[str, Any],
 ) -> bool:
     """
-    Update repository status in ClickHouse repo_sync_events table using SQLAlchemy ORM.
+    Update repository status in ClickHouse repo_sync_events table.
+    Since ClickHouse doesn't support traditional UPDATE, we use INSERT.
     
     Args:
         session: SQLAlchemy session
@@ -90,53 +91,71 @@ async def update_repository_status_ch(
         True if successful, False otherwise
     """
     try:
-        # Check if repository exists
-        repo = session.query(RepoSyncEventCH).filter(
-            RepoSyncEventCH.repository_full_name == repo_full_name,
-            RepoSyncEventCH.installation_id == installation_id,
+        from sqlalchemy import text
+        
+        # Check if repository exists using raw SQL
+        check_query = text("""
+            SELECT repository_full_name
+            FROM repo_sync_events
+            WHERE repository_full_name = :repo_full_name
+            AND installation_id = :installation_id
+            LIMIT 1
+        """)
+        
+        exists = session.execute(
+            check_query,
+            {"repo_full_name": repo_full_name, "installation_id": installation_id}
         ).first()
         
-        if not repo:
-            # Insert new repository record
-            repo = RepoSyncEventCH(
-                repository_name=updates.get("repository_name", ""),
-                repository_full_name=repo_full_name,
-                installation_id=installation_id,
-                sync_status=updates.get("sync_status", SyncStatus.BACKFILLING.value),
-                # backfill_started_at=updates.get("backfill_started_at"),
-                # backfill_completed_at=updates.get("backfill_completed_at"),
-                last_commit_processed=updates.get("last_commit_processed"),
-                total_commits=updates.get("total_commits", 0),
-                error_message=updates.get("error_message"),
-                event_time=updates.get("event_time"),
+        # For ClickHouse, we always INSERT (MergeTree handles deduplication based on order_by)
+        insert_query = text("""
+            INSERT INTO repo_sync_events (
+                repository_full_name,
+                installation_id,
+                repository_name,
+                sync_status,
+                last_commit_processed,
+                total_commits,
+                error_message,
+                event_time
+            ) VALUES (
+                :repository_full_name,
+                :installation_id,
+                :repository_name,
+                :sync_status,
+                :last_commit_processed,
+                :total_commits,
+                :error_message,
+                :event_time
             )
-            session.add(repo)
-            logger.debug(f"Inserted new repository {repo_full_name} into ClickHouse")
-        else:
-            # Update existing repository
-            if "sync_status" in updates:
-                repo.sync_status = updates["sync_status"]
-            # if "backfill_started_at" in updates:
-            #     repo.backfill_started_at = updates["backfill_started_at"]
-            # if "backfill_completed_at" in updates:
-            #     repo.backfill_completed_at = updates["backfill_completed_at"]
-            if "last_commit_processed" in updates:
-                repo.last_commit_processed = updates["last_commit_processed"]
-            if "total_commits" in updates:
-                repo.total_commits = updates["total_commits"]
-            if "error_message" in updates:
-                repo.error_message = updates["error_message"]
-            if "event_time" in updates:
-                repo.event_time = updates["event_time"]
-            logger.debug(f"Updated repository {repo_full_name} in ClickHouse")
+        """)
+        
+        session.execute(insert_query, {
+            "repository_full_name": repo_full_name,
+            "installation_id": installation_id,
+            "repository_name": updates.get("repository_name", ""),
+            "sync_status": updates.get("sync_status", SyncStatus.BACKFILLING.value),
+            "last_commit_processed": updates.get("last_commit_processed", ""),
+            "total_commits": updates.get("total_commits", 0),
+            "error_message": updates.get("error_message", ""),
+            "event_time": updates.get("event_time"),
+        })
         
         session.commit()
+        
+        if not exists:
+            logger.debug(f"Inserted new repository {repo_full_name} into ClickHouse")
+        else:
+            logger.debug(f"Updated repository {repo_full_name} in ClickHouse")
+        
         return True
+        
     except Exception as e:
         session.rollback()
         logger.error(f"Error updating repository status in ClickHouse: {e}")
+        import traceback
+        traceback.print_exc()
         return False
-
 
 async def get_repository_status_ch(
     session: Session,
