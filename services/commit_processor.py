@@ -58,11 +58,11 @@ async def should_send_to_zep(
         
         # Count commits that have been sent to Zep (exist in commit_summary collection)
         count = mongo_db.commit_summary.count_documents({"repo_name": repo_name})
-        should_send = count < ZEP_COMMIT_LIMIT
+        should_send = True
         
         # If we're about to send the 20th commit, mark repository as LIVE
         marked_live = False
-        if should_send and count == ZEP_COMMIT_LIMIT - 1:
+        if should_send:
             # This will be the 20th commit, mark repository as LIVE
             result = mongo_db.repositories.update_one(
                 {
@@ -363,9 +363,7 @@ async def process_bitbucket_commit_from_webhook(
             raise
         
         # Trigger AI analysis asynchronously only if we haven't reached the Zep limit
-        should_send, marked_live = await should_send_to_zep(
-            mongo_db, repo_name, repo_full_name, workspace_id, context="webhook"
-        )
+        should_send = True
         if should_send:
             asyncio.create_task(
                 summarize_and_upload(
