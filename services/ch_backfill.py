@@ -146,11 +146,9 @@ async def get_repository_status_ch(
     """
     Get repository status from ClickHouse using SQLAlchemy ORM.
     """
+    from sqlalchemy import text
+    
     try:
-        # Use raw SQL to bypass ORM issues
-        from sqlalchemy import text
-        debug_table_schema(session=session)
-        
         query = text("""
             SELECT 
                 repository_full_name,
@@ -167,17 +165,21 @@ async def get_repository_status_ch(
             LIMIT 1
         """)
         
+        print(f'[DEBUG] About to execute query for {repo_full_name}, {installation_id}')
+        
         result = session.execute(
             query,
             {"repo_full_name": repo_full_name, "installation_id": installation_id}
         ).first()
         
-        print(f'[DEBUG] RAW RESULT: {result}')
+        print(f'[DEBUG] Query executed successfully. Result: {result}')
         
         if not result:
+            print(f'[DEBUG] No result found, returning None')
             return None
         
-        return {
+        print(f'[DEBUG] Building dict from result')
+        result_dict = {
             "repository_full_name": result[0],
             "installation_id": result[1],
             "repository_name": result[2],
@@ -187,11 +189,16 @@ async def get_repository_status_ch(
             "error_message": result[6],
             "event_time": result[7],
         }
+        print(f'[DEBUG] Returning result dict: {result_dict}')
+        return result_dict
+        
     except Exception as e:
+        print(f'[DEBUG] Exception caught in get_repository_status_ch')
         logger.error(f"Error getting repository status from ClickHouse: {e}")
         import traceback
         traceback.print_exc()
-        return None    
+        raise  # Re-raise to see where it's actually being caught    
+
 def debug_table_schema(session):
     from sqlalchemy import text
     
