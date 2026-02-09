@@ -6,6 +6,10 @@ import hashlib
 from datetime import datetime
 from datetime import timezone
 import asyncio
+import re
+
+REDISEARCH_SPECIAL = r'([,.<>{}\[\]"\'\:;!@#$%^&*()\-\+=~\/\\])'
+
 
 ENTITIES={
     "Repository": Repository,
@@ -52,6 +56,8 @@ class Personalizer:
         _id = hashlib.sha1(raw.encode()).hexdigest()
         # print(f"[DEBUG] ENCODED ID : {_id}")
         return _id
+    def sanitize_redisearch(self, text: str) -> str:
+        return re.sub(REDISEARCH_SPECIAL, r'\\\1', text)
 
     async def add_to_graph(
         self,
@@ -61,6 +67,7 @@ class Personalizer:
         commit_date = None
     ):
         try:
+            message = self.sanitize_redisearch(message)
             _ = await self._client.add_episode(
                 name = f"commit_data_{commit_hash}__{datetime.now().timestamp()}",
                 episode_body=message,
@@ -78,7 +85,7 @@ class Personalizer:
 
     async def add_message(self, user_id, message, thread_id, first_name = "", last_name = "", repo_name = None, email = None, date= None):
 
-        text = message.content
+        text = self.sanitize_redisearch(message.content)
         # print(f"[DEBUG] ADDING TEXT : {text[:100]}...")
         # await self._client.add_episode(user_id=user_id, data = text[:min(len(text), 9999)], type="text", source_description="Data from github summarized by ai")
         await self._client.add_episode(
