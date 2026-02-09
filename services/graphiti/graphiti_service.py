@@ -46,8 +46,11 @@ class Personalizer:
         self._client = get_graphiti()
 
     def _encode(self, group_id : str):
+        print(f"[DEBUG] BEFORE ENCODING : {group_id}")
         raw = group_id.lower().strip()
-        return hashlib.sha1(raw.encode()).hexdigest()
+        _id = hashlib.sha1(raw.encode()).hexdigest()
+        print(f"[DEBUG] ENCODED ID : {_id}")
+        return _id
 
     async def add_to_graph(
         self,
