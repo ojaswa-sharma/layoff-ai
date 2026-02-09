@@ -16,6 +16,20 @@ ENTITIES={
     "Negatives" : Negatives,
 }
 
+EDGES = {
+    "REPOSITORY_CONTAINS_BUG": RepositoryContainsBug,
+    "REPOSITORY_CONTAINS_FEATURE": RepositoryContainsFeature,
+    "BUG_ADDRESSED_BY_COMMIT": BugAddressedByCommit,
+    "FEATURE_REALIZED_BY_COMMIT": FeatureRealizedByCommit
+}
+
+EDGE_MAP = {
+    ("Repository", "Bug") : ["REPOSITORY_CONTAINS_BUG"],
+    ("Repository", "Feature") : ["REPOSITORY_CONTAINS_FEATURE"],
+    ("Bug", "Commit") : ["BUG_ADDRESSED_BY_COMMIT"],
+    ("Feature", "Commit") : ["FEATURE_REALIZED_BY_COMMIT"]
+}
+
 class Personalizer:
     def __init__(self):
         self._client = get_graphiti()
@@ -40,6 +54,8 @@ class Personalizer:
                 group_id=self._encode(f"{graph_id}"),
                 reference_time=commit_date or datetime.now(timezone.utc),
                 entity_types=ENTITIES,
+                edge_types=EDGES,
+                edge_type_map=EDGE_MAP
             )
         except Exception as e:
             print(f"[ERROR] Error while adding to graphiti: {e}")
