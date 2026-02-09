@@ -5,6 +5,7 @@ from graphiti_core.nodes import EpisodeType
 import hashlib
 from datetime import datetime
 from datetime import timezone
+import asyncio
 
 ENTITIES={
     "Repository": Repository,
@@ -61,7 +62,7 @@ class Personalizer:
     ):
         try:
             _ = await self._client.add_episode(
-                name = f"commit_data_{commit_hash}",
+                name = f"commit_data_{commit_hash}__{datetime.now().timestamp()}",
                 episode_body=message,
                 source=EpisodeType.text,
                 source_description=f"github commit",
@@ -80,7 +81,7 @@ class Personalizer:
         text = message.content
         # await self._client.add_episode(user_id=user_id, data = text[:min(len(text), 9999)], type="text", source_description="Data from github summarized by ai")
         await self._client.add_episode(
-            name="commit data",
+            name=f"commit_data__{datetime.now().timestamp()}",
             episode_body=text,
                 source=EpisodeType.text,
                 source_description=f"Commit tracked",

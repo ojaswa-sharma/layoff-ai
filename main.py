@@ -4,7 +4,7 @@ from routers import _all
 from contextlib import asynccontextmanager
 from services.db import init_mongo
 from dotenv import load_dotenv
-from services.graphiti.init_client import init_graphiti
+from services.graphiti.init_client import init_graphiti, get_graphiti
 
 def startup_():
     init_mongo()
@@ -14,6 +14,8 @@ async def lifespan(app : FastAPI):
     print(f"[LIFESPAN] Initializing app")
     startup_()
     init_graphiti()
+    _graphiti = get_graphiti()
+    await _graphiti.build_indices_and_constraints()
     print(f"[LIFESPAN] Event complete")
     yield
     print(f"[LIFESPAN] Ending")
