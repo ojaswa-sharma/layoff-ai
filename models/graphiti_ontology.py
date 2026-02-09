@@ -67,8 +67,9 @@ class Developer(BaseModel):
     """
     Represents the developer
     """
-    email : BaseModel = Field(description="The email of the developer")
-    name : BaseModel = Field(description="The name of the developer")
+    developer_email : str = Field(description="The email of the developer")
+    developer_name : str = Field(description="The name of the developer")
+    developer_work : str = Field(description="OVERALL WORK DONE BY THE DEVELOPER ACROSS COMMITS")
     
 
 class Changes(BaseModel):
