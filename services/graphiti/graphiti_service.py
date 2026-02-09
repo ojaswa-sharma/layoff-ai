@@ -1,5 +1,6 @@
 from services.graphiti.init_client import get_graphiti
 from models.zep_ontology import *
+from graphiti_core.nodes import EpisodeType
 import hashlib
 
 ENTITIES={
@@ -31,7 +32,7 @@ class Personalizer:
             _ = await self._client.add_episode(
                 name = f"commit_data_{commit_hash}",
                 episode_body=message,
-                source="text",
+                source=EpisodeType.text,
                 source_description=f"github commit",
                 group_id=self._encode(f"{graph_id}"),
                 reference_time=commit_date
