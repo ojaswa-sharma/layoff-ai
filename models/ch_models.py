@@ -222,7 +222,7 @@ class RepoSyncEventCH(Base):
     # backfill_started_at = Column(DateTime, nullable=True)
     # backfill_completed_at = Column(DateTime, nullable=True)
     last_commit_processed = Column(String, nullable=True)
-    total_commits_backfilled = Column(Integer, nullable=False, default=0)
+    total_commits = Column(Integer, nullable=False, default=0)
     error_message = Column(Text, nullable=True)
     event_time = Column(DateTime, nullable=True)
     
@@ -237,7 +237,7 @@ class RepoSyncEventCH(Base):
             # "backfill_started_at": self.backfill_started_at,
             # "backfill_completed_at": self.backfill_completed_at,
             "last_commit_processed": self.last_commit_processed,
-            "total_commits_backfilled": self.total_commits_backfilled,
+            "total_commits": self.total_commits,
             "error_message": self.error_message,
             "event_time": self.event_time,
         }
@@ -260,7 +260,7 @@ class RepoSyncEventCH(Base):
             # backfill_started_at=repo.backfill_started_at,
             # backfill_completed_at=repo.backfill_completed_at,
             last_commit_processed=repo.last_commit_processed,
-            total_commits_backfilled=repo.total_commits_backfilled,
+            total_commits=repo.total_commits,
             error_message=repo.error_message,
             event_time=repo.event_time,
         )
