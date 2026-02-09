@@ -191,7 +191,6 @@ async def handle_push_event(request_data: dict, session: Session):
                 workspace_id,
                 {
                     "repository_name": repo_name,
-                    "repository_url": repo_url,
                     "sync_status": SyncStatus.BACKFILLING.value,
                     "backfill_started_at": datetime.utcnow(),
                     "error_message": None,
