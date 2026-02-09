@@ -147,24 +147,31 @@ async def get_repository_status_ch(
     Get repository status from ClickHouse using SQLAlchemy ORM.
     """
     try:
-        # Explicitly select all columns
-        stmt = select(
-            RepoSyncEventCH.repository_full_name,
-            RepoSyncEventCH.installation_id,
-            RepoSyncEventCH.repository_name,
-            RepoSyncEventCH.sync_status,
-            RepoSyncEventCH.last_commit_processed,
-            RepoSyncEventCH.total_commits,
-            RepoSyncEventCH.error_message,
-            RepoSyncEventCH.event_time,
-        ).where(
-            RepoSyncEventCH.repository_full_name == repo_full_name,
-            RepoSyncEventCH.installation_id == installation_id,
-        )
+        # Use raw SQL to bypass ORM issues
+        from sqlalchemy import text
         
-        result = session.execute(stmt).first()
+        query = text("""
+            SELECT 
+                repository_full_name,
+                installation_id,
+                repository_name,
+                sync_status,
+                last_commit_processed,
+                total_commits,
+                error_message,
+                event_time
+            FROM repo_sync_events
+            WHERE repository_full_name = :repo_full_name
+            AND installation_id = :installation_id
+            LIMIT 1
+        """)
         
-        print(f'[DEBUG] RESULT: {result}')
+        result = session.execute(
+            query,
+            {"repo_full_name": repo_full_name, "installation_id": installation_id}
+        ).first()
+        
+        print(f'[DEBUG] RAW RESULT: {result}')
         
         if not result:
             return None
@@ -181,4 +188,14 @@ async def get_repository_status_ch(
         }
     except Exception as e:
         logger.error(f"Error getting repository status from ClickHouse: {e}")
-        return None
+        import traceback
+        traceback.print_exc()
+        return None    
+def debug_table_schema(session):
+    from sqlalchemy import text
+    
+    result = session.execute(text("DESCRIBE TABLE repo_sync_events"))
+    print("=== TABLE SCHEMA ===")
+    for row in result:
+        print(row)
+    print("===================")
