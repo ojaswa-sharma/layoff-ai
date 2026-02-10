@@ -6,6 +6,7 @@ and repository status tracking during backfill operations.
 """
 import logging
 import asyncio
+import aiohttp
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from sqlalchemy.orm import Session
@@ -14,6 +15,259 @@ from models.ch_models import CommitCH
 from services.ch_commit_processor import check_commit_exists_ch
 
 logger = logging.getLogger(__name__)
+
+BITBUCKET_MAX_COMMITS_PER_PAGE = 50  # Bitbucket API default pagination
+BITBUCKET_API = "https://api.bitbucket.org/2.0"
+GITHUB_API = "https://api.github.com"
+MAX_COMMITS_PER_PAGE = 100  # GitHub API max
+
+
+async def fetch_with_retry(
+    session: aiohttp.ClientSession,
+    url: str,
+    headers: Dict[str, str],
+    max_retries: int = 3,
+    base_delay: float = 1.0,
+) -> aiohttp.ClientResponse:
+    """
+    Fetch with exponential backoff retry logic.
+    
+    Handles rate limiting (429) and transient errors (5xx).
+    
+    Note: The returned response must be used within an async context manager
+    or read immediately to avoid connection closed errors.
+    """
+    for attempt in range(max_retries):
+        try:
+            resp = await session.get(url, headers=headers)
+            
+            # Handle rate limiting
+            if resp.status == 429:
+                retry_after = int(resp.headers.get("Retry-After", base_delay * (2 ** attempt)))
+                logger.warning(
+                    f"Rate limited. Retrying after {retry_after}s (attempt {attempt + 1}/{max_retries})"
+                )
+                resp.close()  # Close the response before retrying
+                await asyncio.sleep(retry_after)
+                continue
+            
+            # Handle server errors
+            if resp.status >= 500:
+                if attempt < max_retries - 1:
+                    delay = base_delay * (2 ** attempt)
+                    logger.warning(
+                        f"Server error {resp.status}. Retrying after {delay}s (attempt {attempt + 1}/{max_retries})"
+                    )
+                    resp.close()  # Close the response before retrying
+                    await asyncio.sleep(delay)
+                    continue
+            
+            # For successful responses or other errors, return the response
+            # Caller must use it within an async context manager or read immediately
+            return resp
+                
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            if attempt < max_retries - 1:
+                delay = base_delay * (2 ** attempt)
+                logger.warning(
+                    f"Network error: {e}. Retrying after {delay}s (attempt {attempt + 1}/{max_retries})"
+                )
+                await asyncio.sleep(delay)
+            else:
+                raise
+    
+    raise RuntimeError(f"Failed to fetch {url} after {max_retries} attempts")
+
+
+async def fetch_bitbucket_repository_commits(
+    repo_full_name: str,
+    access_token: str,
+    since: Optional[datetime] = None,
+    until: Optional[datetime] = None,
+    max_commits: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Fetch historical commits from a Bitbucket repository with pagination.
+    
+    Args:
+        repo_full_name: Repository full name (workspace/repo)
+        access_token: Bitbucket OAuth access token
+        since: Only fetch commits after this date (optional)
+        until: Only fetch commits before this date (optional)
+        max_commits: Maximum total commits to fetch (None = unlimited)
+    
+    Returns:
+        List of commit dictionaries from Bitbucket API
+    """
+    all_commits = []
+    page = 1
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Accept": "application/json",
+    }
+    
+    url = f"{BITBUCKET_API}/repositories/{repo_full_name}/commits"
+    
+    async with aiohttp.ClientSession() as session:
+        while True:
+            params = {
+                "pagelen": BITBUCKET_MAX_COMMITS_PER_PAGE,
+                "page": page,
+            }
+            
+            # Bitbucket API uses query parameters for date filtering
+            if since:
+                params["since"] = since.isoformat()
+            if until:
+                params["until"] = until.isoformat()
+            
+            # Build URL with query parameters
+            query_string = "&".join([f"{k}={v}" for k, v in params.items()])
+            full_url = f"{url}?{query_string}"
+            
+            logger.info(f"Fetching Bitbucket commits page {page} for {repo_full_name}")
+            
+            resp = await fetch_with_retry(session, full_url, headers)
+            
+            try:
+                if resp.status == 404:
+                    logger.warning(f"Repository {repo_full_name} not found or no access")
+                    break
+                
+                if resp.status != 200:
+                    error_body = await resp.text()
+                    raise RuntimeError(
+                        f"Failed to fetch Bitbucket commits: {resp.status} - {error_body}"
+                    )
+                
+                data = await resp.json()
+            finally:
+                # Ensure response is properly closed
+                resp.close()
+            commits = data.get("values", [])
+            
+            if not commits:
+                break
+            
+            all_commits.extend(commits)
+            
+            # Check if we've hit the max commits limit
+            if max_commits and len(all_commits) >= max_commits:
+                all_commits = all_commits[:max_commits]
+                break
+            
+            # Check if there are more pages
+            next_url = data.get("next")
+            if not next_url:
+                break
+            
+            page += 1
+            
+            # Rate limiting: small delay between pages
+            await asyncio.sleep(0.5)
+    
+    logger.info(f"Fetched {len(all_commits)} commits from Bitbucket {repo_full_name}")
+    return all_commits
+
+
+async def fetch_repository_commits(
+    repo_full_name: str,
+    installation_token: str,
+    since: Optional[datetime] = None,
+    until: Optional[datetime] = None,
+    per_page: int = MAX_COMMITS_PER_PAGE,
+    max_commits: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Fetch historical commits from a repository with pagination.
+    
+    Args:
+        repo_full_name: Repository full name (owner/repo)
+        installation_token: GitHub installation access token
+        since: Only fetch commits after this date (optional)
+        until: Only fetch commits before this date (optional)
+        per_page: Number of commits per page (max 100)
+        max_commits: Maximum total commits to fetch (None = unlimited)
+    
+    Returns:
+        List of commit dictionaries from GitHub API
+    """
+    all_commits = []
+    page = 1
+    headers = {
+        "Authorization": f"token {installation_token}",
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "layoff-ai-app",
+    }
+    
+    url = f"{GITHUB_API}/repos/{repo_full_name}/commits"
+    params = {
+        "per_page": min(per_page, MAX_COMMITS_PER_PAGE),
+        "page": page,
+    }
+    
+    if since:
+        params["since"] = since.isoformat()
+    if until:
+        params["until"] = until.isoformat()
+    
+    async with aiohttp.ClientSession() as session:
+        while True:
+            params["page"] = page
+            full_url = f"{url}?per_page={params['per_page']}&page={page}"
+            if since:
+                full_url += f"&since={since.isoformat()}"
+            if until:
+                full_url += f"&until={until.isoformat()}"
+            
+            logger.info(f"Fetching commits page {page} for {repo_full_name}")
+            
+            resp = await fetch_with_retry(session, full_url, headers)
+            
+            try:
+                if resp.status == 404:
+                    logger.warning(f"Repository {repo_full_name} not found or no access")
+                    break
+                
+                if resp.status != 200:
+                    error_body = await resp.text()
+                    raise RuntimeError(
+                        f"Failed to fetch commits: {resp.status} - {error_body}"
+                    )
+                
+                commits = await resp.json()
+            finally:
+                # Ensure response is properly closed
+                resp.close()
+            
+            if not commits:
+                break
+            
+            all_commits.extend(commits)
+            
+            # Check if we've hit the max commits limit
+            if isinstance(max_commits, str):
+                try:
+                    max_commits = int(max_commits)
+                except:
+                    print(f"[ERROR] MAX COMMITS : {max_commits} could not be parsed")
+                    max_commits = 25
+            if max_commits and len(all_commits) >= max_commits:
+                all_commits = all_commits[:max_commits]
+                break
+            
+            # Check if there are more pages
+            link_header = resp.headers.get("Link", "")
+            if 'rel="next"' not in link_header:
+                break
+            
+            page += 1
+            
+            # Rate limiting: small delay between pages
+            await asyncio.sleep(0.5)
+    
+    logger.info(f"Fetched {len(all_commits)} commits from {repo_full_name}")
+    return all_commits
 
 
 async def insert_commits_batch_ch(
@@ -295,7 +549,7 @@ async def backfill_repository_ch(
                 raise ValueError("app_id and private_key_pem are required for GitHub backfill")
             
             from services.git_diff import get_installation_token
-            from services.backfill import fetch_repository_commits
+            # from services.backfill import fetch_repository_commits
             
             # Get installation token for GitHub API
             installation_token = await get_installation_token(
@@ -313,7 +567,7 @@ async def backfill_repository_ch(
             
         else:  # bitbucket
             from services.auth.bitbucket_oauth import get_access_token
-            from services.backfill import fetch_bitbucket_repository_commits
+            # from services.backfill import fetch_bitbucket_repository_commits
             
             # Get Bitbucket OAuth token
             access_token = await get_access_token()
