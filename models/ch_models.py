@@ -5,9 +5,11 @@ SQLAlchemy declarative models for ClickHouse tables.
 import json
 from typing import Dict, Any
 from sqlalchemy import Column, Integer, DateTime, text, Computed
+from sqlalchemy.orm import column_property
 from dependencies.ch_db import Base
 # from clickhouse_connect.cc_sqlalchemy import engines
 from clickhouse_connect.cc_sqlalchemy.ddl.tableengine import MergeTree
+from sqlalchemy.sql import literal_column
 from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import LowCardinality, String
 
 
@@ -30,8 +32,13 @@ class CommitCH(Base):
     email = Column(LowCardinality(String), nullable=False)
     date = Column(DateTime, nullable=False)
     changes = Column(String, nullable=True)
-    additions = Column(Integer, Computed("JSONExtractInt(changes, 'additions')"))
-    deletions = Column(Integer, Computed("JSONExtractInt(changes, 'deletions')"))
+    additions = column_property(
+            literal_column("additions", Integer)
+        )
+
+    deletions = column_property(
+            literal_column("deletions", Integer)
+        )
 
 
     def to_dict(self) -> Dict[str, Any]:
