@@ -15,6 +15,7 @@ from models.ch_models import CommitCH, RepoSyncEventCH
 from services.git_diff import fetch_diff_from_webhook, fetch_bitbucket_diff, count_diff_stats
 from services.ai_service import summarize_and_upload
 from services.ch_ai_service import insert_commit_analysis_ch
+from services.background_worker import get_worker_manager
 
 logger = logging.getLogger(__name__)
 
@@ -313,8 +314,21 @@ async def process_commit_from_webhook(
             return None
         
         # Trigger AI analysis asynchronously only if we haven't reached the Zep limit
-        should_send= True
-        asyncio.create_task(summarize_and_upload(diff_text, commit_model.author, commit_model.email, repo_name, commit_model.message, None, commit_hash, commit_date))
+        should_send = True
+        if should_send:
+            # Use background worker queue instead of asyncio.create_task
+            worker_manager = get_worker_manager()
+            await worker_manager.add_task(
+                summarize_and_upload,
+                diff_text, 
+                commit_model.author, 
+                commit_model.email, 
+                repo_name, 
+                commit_model.message, 
+                None, 
+                commit_hash, 
+                commit_date
+            )
             # Create a new session for the async task since the current one will be closed            
 #             async def analyze_and_store():
 #                 ch_session = SessionLocal()
@@ -513,7 +527,20 @@ async def process_bitbucket_commit_from_webhook(
         # Trigger AI analysis asynchronously only if we haven't reached the Zep limit
         should_send = True
         if should_send:
-            asyncio.create_task(summarize_and_upload(diff_text, commit_model.author, commit_model.email, repo_name, commit_model.message, None, commit_hash, commit_date))
+            # Use background worker queue instead of asyncio.create_task
+            # This limits concurrency and memory usage
+            worker_manager = get_worker_manager()
+            await worker_manager.add_task(
+                summarize_and_upload,
+                diff_text, 
+                commit_model.author, 
+                commit_model.email, 
+                repo_name, 
+                commit_model.message, 
+                None, 
+                commit_hash, 
+                commit_date
+            )
             # Create a new session for the async task since the current one will be closed
 #             from dependencies.ch_db import SessionLocal
 #             from services.zep_store import get_personalizer, botMessage

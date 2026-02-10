@@ -174,6 +174,7 @@ STRICT COMPLIANCE IS REQUIRED AT ALL TIMES.
     }
 
 async def summarize_and_upload(diff_text, name, mail, repo_name, commit_title, db = None, commit_hash = None, commit_date = None):
+    created_session = False
     try:
         diff = await summarie_diff(get_openai(), diff_text, name, mail, repo_name, commit_title)
         # actual_diff = diff.copy()
@@ -198,9 +199,12 @@ async def summarize_and_upload(diff_text, name, mail, repo_name, commit_title, d
         # await run_in_threadpool(db.commit_summary.insert_one,diff)
         if not db:
             db = get_ch_session_direct()
+            created_session = True
+            
         insert_commit_analysis_ch(db, diff, commit_hash, mail, repo_name)
         await graphiti.add_to_graph(graph_id=f"{mail}_{repo_name}", message=msg.content, commit_hash=commit_hash, commit_date = commit_date)
     except Exception as e:
         print(f"[ERROR] Something went wrong during summarization : {e}")
     finally:
-        db.close()
+        if created_session and db:
+            db.close()
