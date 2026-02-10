@@ -35,10 +35,33 @@ def add_materialized_change_columns(engine):
                 ADD COLUMN IF NOT EXISTS deletions Int32
                 MATERIALIZED JSONExtractInt(changes, 'deletions')
             """))
-            # conn.execute(text("OPTIMIZE TABLE commits FINAL"))
-        logger.info("Materialized columns added successfully")
+
+            result = conn.execute(text("""
+                SELECT count(*) 
+                FROM system.tables 
+                WHERE database = 'default' AND name = 'user_repo_agg_mv'
+            """))
+            exists = result.fetchone()[0]
+            if exists == 0:
+                conn.execute(text("""
+                    CREATE MATERIALIZED VIEW user_repo_agg_mv
+                    TO user_repo_agg
+                    AS
+                    SELECT
+                        email,
+                        anyState(author) AS author,
+                        repository_name AS repo_name,
+                        countState() AS commit_count,
+                        sumState(additions) AS total_additions,
+                        sumState(deletions) AS total_deletions,
+                        maxState(date) AS last_commit_date
+                    FROM commits
+                    GROUP BY email, repo_name
+                """))
+
+        logger.info("Materialized columns and view ensured successfully")
     except Exception as e:
-        logger.warning(f"Could not add materialized columns: {e}")
+        logger.warning(f"Could not add materialized columns/view: {e}")
 
 def init_ch_engine():
     """
@@ -148,3 +171,19 @@ def get_ch_session_direct() -> Session:
     if SessionLocal is None:
         init_ch_engine()
     return SessionLocal()
+
+
+REPOPULATE = """
+INSERT INTO user_repo_agg
+SELECT
+    email,
+    repository_name AS repo_name,
+    anyState(author) AS author,
+    countState() AS commit_count,
+    sumState(additions) AS total_additions,
+    sumState(deletions) AS total_deletions,
+    maxState(date) AS last_commit_date
+FROM commits
+GROUP BY email, repository_name;
+
+"""

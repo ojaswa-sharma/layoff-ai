@@ -9,8 +9,8 @@ import json
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_, or_
-from models.ch_models import CommitCH, CommitAnalysisCH
+from sqlalchemy import func, and_, or_, text
+from models.ch_models import CommitCH, CommitAnalysisCH, UserRepoAggregate
 from sqlalchemy import func, select, literal_column, case
 from datetime import datetime, timezone
 from fastapi.concurrency import run_in_threadpool
@@ -165,60 +165,47 @@ def aggregate(session, user_agg):
 async def list_users_paginated_ch(session, page: int = 1, limit: int = 10):
     skip = (page - 1) * limit
 
-    additions = CommitCH.additions
-    deletions = CommitCH.deletions
+    query = text(f"""
+    SELECT
+        email,
+        projects,
+        total_users
+    FROM (
+        SELECT
+            email,
+            groupArray(
+                (
+                    repo_name,
+                    author,
+                    commit_count,
+                    total_additions,
+                    total_deletions,
+                    last_commit_date
+                )
+            ) AS projects,
+            count(*) OVER() AS total_users
+        FROM (
+            SELECT
+                email,
+                repo_name,
+                anyMerge(author) AS author,
+                countMerge(commit_count) AS commit_count,
+                sumMerge(total_additions) AS total_additions,
+                sumMerge(total_deletions) AS total_deletions,
+                maxMerge(last_commit_date) AS last_commit_date
+            FROM user_repo_agg
+            GROUP BY email, repo_name
+        ) AS merged
+        GROUP BY email
+        ORDER BY email
+        LIMIT {limit} OFFSET {skip}
+    ) AS final_users
+    """)
 
-    # Repo level aggregation
-    repo_agg = (
-        select(
-            func.any(CommitCH.author).label("author"),
-            CommitCH.email.label("email"),
-            CommitCH.repository_name.label("repo_name"),
-            func.max(CommitCH.date).label("repo_last_commit"),
-            func.sum(additions).label("repo_additions"),
-            func.sum(deletions).label("repo_deletions"),
-            func.count().label("repo_commits"),
-        )
-        .where(
-            CommitCH.changes.isnot(None),
-            CommitCH.changes != ''
-        )
-        .group_by(
-            CommitCH.email,
-            CommitCH.repository_name,
-        )
-        .subquery()
-    )
+    rows = await run_in_threadpool(session.execute, query)
+    results = rows.fetchall()
 
-    # User level aggregation with separate arrays
-    user_agg = (
-        select(
-            func.any(repo_agg.c.author).label("author"),
-            repo_agg.c.email,
-            func.max(repo_agg.c.repo_last_commit).label("last_commit"),
-            func.sum(repo_agg.c.repo_additions).label("total_additions"),
-            func.sum(repo_agg.c.repo_deletions).label("total_deletions"),
-            func.sum(repo_agg.c.repo_commits).label("total_commits"),
-
-            # Use separate arrays to avoid type mismatch
-            func.groupArray(repo_agg.c.repo_name).label("repo_names"),
-            func.groupArray(repo_agg.c.repo_last_commit).label("repo_last_commits"),
-            func.groupArray(repo_agg.c.repo_additions).label("repo_additions_list"),
-            func.groupArray(repo_agg.c.repo_deletions).label("repo_deletions_list"),
-
-            # Total users count (window)
-            func.count().over().label("total_items")
-        )
-        .group_by(repo_agg.c.email)
-        .order_by(repo_agg.c.email)
-        .offset(skip)
-        .limit(limit)
-    )
-
-
-    rows = await run_in_threadpool(aggregate, session, user_agg)
-
-    if not rows:
+    if not results:
         return {
             "page": page,
             "limit": limit,
@@ -227,47 +214,48 @@ async def list_users_paginated_ch(session, page: int = 1, limit: int = 10):
             "data": []
         }
 
-    total_items = rows[0].total_items
+    now = datetime.utcnow()
+    data = []
+    total_items = results[0].total_users
     total_pages = (total_items + limit - 1) // limit
 
-    now = datetime.utcnow()
-
-    data = []
-    for r in rows:
-
-        last_commit = r.last_commit
-        hours = (now - last_commit).total_seconds() / 3600
-        status = "active" if hours <= 6 else "idle" if hours <= 24 else "inactive"
-
-        # Reconstruct repos from parallel arrays
+    for r in results:
+        email = r.email
         repos = []
-        for name, commit, additions, deletions in zip(
-            r.repo_names,
-            r.repo_last_commits,
-            r.repo_additions_list,
-            r.repo_deletions_list
-        ):
-            repo_hours = (now - commit).total_seconds() / 3600
+        total_additions = 0
+        total_deletions = 0
+        total_commits = 0
+        last_commit = None
+
+        for proj in r.projects:
+            repo_name, author, commit_count, additions, deletions, last_commit_date = proj
+            total_additions += additions
+            total_deletions += deletions
+            total_commits += commit_count
+            if not last_commit or last_commit_date > last_commit:
+                last_commit = last_commit_date
+
+            repo_hours = (now - last_commit_date).total_seconds() / 3600
             repo_status = "active" if repo_hours <= 6 else "idle" if repo_hours <= 24 else "inactive"
 
             repos.append({
-                "repo_name": name,
-                "last_commit": commit.isoformat(),
+                "repo_name": repo_name,
+                "last_commit": last_commit_date.isoformat(),
                 "repo_additions": additions,
                 "repo_deletions": deletions,
-                "activity_status": repo_status
+                "activity_status": repo_status,
             })
 
+        hours = (now - last_commit).total_seconds() / 3600
+        user_status = "active" if hours <= 6 else "idle" if hours <= 24 else "inactive"
+
         data.append({
-            "email": r.email,
+            "email": email,
+            "author": r.projects[0][1],
             "repos": repos,
-            "changes": {
-                "additions": r.total_additions,
-                "deletions": r.total_deletions,
-            },
-            "status": status,
-            "total_commits": r.total_commits,
-            "author" : r.author
+            "changes": {"additions": total_additions, "deletions": total_deletions},
+            "total_commits": total_commits,
+            "status": user_status
         })
 
     return {
@@ -275,7 +263,7 @@ async def list_users_paginated_ch(session, page: int = 1, limit: int = 10):
         "limit": limit,
         "total_items": total_items,
         "total_pages": total_pages,
-        "data": data,
+        "data": data
     }
 
 def make_aware(dt):

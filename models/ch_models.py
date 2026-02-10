@@ -12,7 +12,7 @@ from dependencies.ch_db import Base
 from sqlalchemy.sql import literal_column
 # from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import LowCardinality, String
 from clickhouse_sqlalchemy import engines
-from clickhouse_sqlalchemy.types import LowCardinality, String
+from clickhouse_sqlalchemy.types import LowCardinality, String, AggregateFunction, UInt64, Int64
 
 
 class CommitCH(Base):
@@ -20,7 +20,8 @@ class CommitCH(Base):
 
     __table_args__ = (
         engines.MergeTree(
-            order_by=("email" ,"repository_name", "date")
+            order_by=("email" ,"repository_name", "date"),
+            partition_by=text("toYYYYMM(date)")
         ),
     )
 
@@ -218,3 +219,35 @@ class RepoSyncEventCH(Base):
             event_time=repo.event_time,
         )
 
+
+
+class UserRepoAggregate(Base):
+    __tablename__ = "user_repo_agg"
+
+    __table_args__ = (
+        engines.AggregatingMergeTree(
+            order_by=("email", "repo_name"),
+        ),
+    )
+
+    email = Column(LowCardinality(String), primary_key=True)
+    repo_name = Column(LowCardinality(String), primary_key=True)
+    author = Column(
+        AggregateFunction("any", String)
+    )
+
+    commit_count = Column(
+        AggregateFunction("count", Integer)
+    )
+
+    total_additions = Column(
+        AggregateFunction("sum", Integer)
+    )
+
+    total_deletions = Column(
+        AggregateFunction("sum", Integer)
+    )
+
+    last_commit_date = Column(
+        AggregateFunction("max", DateTime)
+    )

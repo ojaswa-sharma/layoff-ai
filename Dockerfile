@@ -14,12 +14,4 @@ COPY . .
 
 EXPOSE 5002
 
-CMD ["gunicorn", "main:app", \
-     "-k", "uvicorn.workers.UvicornWorker", \
-     "--bind", "0.0.0.0:5002", \
-     "--workers", "3", \
-     "--timeout", "120", \
-     "--graceful-timeout", "30", \
-     "--keep-alive", "5", \
-     "--access-logfile", "-", \
-     "--error-logfile", "-"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "5002"]
