@@ -13,6 +13,7 @@ from sqlalchemy import func, and_, or_
 from models.ch_models import CommitCH, CommitAnalysisCH
 from sqlalchemy import func, select, literal_column, case
 from datetime import datetime, timezone
+from fastapi.concurrency import run_in_threadpool
 
 
 logger = logging.getLogger(__name__)
@@ -158,10 +159,10 @@ async def list_users_ch(
         logger.error(f"Error listing users from ClickHouse: {e}")
         return []
 
-
+def aggregate(session, user_agg):
+    return session.execute(user_agg).fetchall()
 
 async def list_users_paginated_ch(session, page: int = 1, limit: int = 10):
-
     skip = (page - 1) * limit
 
     additions = CommitCH.additions
@@ -214,7 +215,8 @@ async def list_users_paginated_ch(session, page: int = 1, limit: int = 10):
         .limit(limit)
     )
 
-    rows = session.execute(user_agg).fetchall()
+
+    rows = await run_in_threadpool(aggregate, session, user_agg)
 
     if not rows:
         return {
