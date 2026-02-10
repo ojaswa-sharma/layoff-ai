@@ -82,12 +82,12 @@ def init_ch_engine():
             }
         )
 
-        add_materialized_change_columns(engine)
 
         Base.metadata.create_all(bind=engine)
 
-        
-        # Create session factory
+        add_materialized_change_columns(engine)
+
+
         SessionLocal = sessionmaker(
             autocommit=False,
             autoflush=False,
