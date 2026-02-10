@@ -1,88 +1,81 @@
 import asyncio
 import logging
-import gc
 
 logger = logging.getLogger(__name__)
 
 class BackgroundWorker:
-    def __init__(self, max_workers=5, max_queue_size=100):
+    def __init__(self, max_workers: int = 5, max_queue_size: int = 100, max_concurrent_tasks: int | None = None):
         self.queue = asyncio.Queue(maxsize=max_queue_size)
         self.max_workers = max_workers
-        self.workers = []
+        self.sem = asyncio.Semaphore(max_concurrent_tasks or max_workers)
+        self.workers: list[asyncio.Task] = []
         self.running = False
-        self._was = False
 
     async def start(self):
         if self.running:
             return
         self.running = True
         for i in range(self.max_workers):
-            worker = asyncio.create_task(self._worker(i))
-            self.workers.append(worker)
-        logger.info(f"Started {self.max_workers} background workers with queue size {self.queue.maxsize}")
+            t = asyncio.create_task(self._worker(i), name=f"bg-worker-{i}")
+            self.workers.append(t)
+        logger.info("Started %d workers (queue=%d, concurrent=%d)",
+                    self.max_workers, self.queue.maxsize, self.sem._value)
 
     async def stop(self):
+        if not self.running:
+            return
+
+        await self.queue.join()
+
         self.running = False
-        # Wait for queue to empty
-        if not self.queue.empty():
-            logger.info(f"Waiting for {self.queue.qsize()} tasks to complete...")
-            await self.queue.join()
-        
-        # Cancel workers
-        for worker in self.workers:
-            worker.cancel()
-        
+        for _ in range(len(self.workers)):
+            await self.queue.put(None)
+
         await asyncio.gather(*self.workers, return_exceptions=True)
-        self.workers = []
+        self.workers.clear()
         logger.info("Stopped background workers")
 
-    async def add_task(self, func, *args, **kwargs):
+    async def add_task(self, func, *args, **kwargs) -> bool:
         """
-        Add a task to the queue.
-        If the queue is full, this will block until a slot is available.
-        This provides backpressure to prevent memory exhaustion.
+        Backpressure is enforced by bounded queue.
+        IMPORTANT: keep args small (IDs, not big objects).
         """
         try:
-            self._was = False
             await self.queue.put((func, args, kwargs))
             return True
-        except Exception as e:
-            logger.error(f"Failed to add task to queue: {e}")
+        except Exception:
+            logger.exception("Failed to enqueue task")
             return False
 
-    async def _worker(self, worker_id):
-        logger.info(f"Worker {worker_id} started")
-        while self.running:
-            if not self._was:
-                print(f"[TASKS] Remaining tasks : {(size_:=self.queue.qsize())}")
-                if size_ == 0:
-                    self._was = True
-            try:
-                func, args, kwargs = await self.queue.get()
-                try:
-                    if asyncio.iscoroutinefunction(func):
-                        await func(*args, **kwargs)
-                    else:
-                        func(*args, **kwargs)
-                except Exception as e:
-                    logger.error(f"Error in background task (worker {worker_id}): {e}", exc_info=True)
-                finally:
-                    self.queue.task_done()
-                    
-                    del func
-                    del args
-                    del kwargs
-                    
-                    gc.collect()
-            except asyncio.CancelledError:
-                logger.info(f"Worker {worker_id} cancelled")
-                break
-            except Exception as e:
-                logger.error(f"Worker {worker_id} error: {e}", exc_info=True)
-                await asyncio.sleep(1)
+    async def _execute(self, func, args, kwargs):
+        async with self.sem:
+            result = func(*args, **kwargs)
+            if asyncio.iscoroutine(result):
+                await result
 
-# Global instance
-worker_manager = BackgroundWorker(max_workers=5, max_queue_size=50)
+    async def _worker(self, worker_id: int):
+        logger.info("Worker %d started", worker_id)
+        while True:
+            item = await self.queue.get()
+            if item is None:
+                self.queue.task_done()
+                logger.info("Worker %d exiting", worker_id)
+                break
+
+            func, args, kwargs = item
+            try:
+                await self._execute(func, args, kwargs)
+            except Exception:
+                logger.exception("Error in background task (worker %d)", worker_id)
+            finally:
+                self.queue.task_done()
+
+
+worker_manager = BackgroundWorker(
+    max_workers=10,
+    max_queue_size=500,
+    max_concurrent_tasks=5,
+)
 
 def get_worker_manager():
     return worker_manager
