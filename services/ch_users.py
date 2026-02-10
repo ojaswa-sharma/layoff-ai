@@ -11,7 +11,9 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, or_
 from models.ch_models import CommitCH, CommitAnalysisCH
-from sqlalchemy import func, select, literal_column
+from sqlalchemy import func, select, literal_column, case
+from datetime import datetime, timezone
+
 
 logger = logging.getLogger(__name__)
 
@@ -273,9 +275,6 @@ async def list_users_paginated_ch(session, page: int = 1, limit: int = 10):
         "total_pages": total_pages,
         "data": data,
     }
-
-from sqlalchemy import select, case, literal_column
-from datetime import datetime, timezone
 
 def make_aware(dt):
     """Convert naive datetime to UTC-aware datetime"""

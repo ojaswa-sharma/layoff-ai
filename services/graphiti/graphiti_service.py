@@ -2,6 +2,8 @@ from services.graphiti.init_client import get_graphiti
 # from models.zep_ontology import *
 from models.graphiti_ontology import *
 from graphiti_core.nodes import EpisodeType
+from graphiti_core.search.search_filters import SearchFilters
+
 import hashlib
 from datetime import datetime
 from datetime import timezone
@@ -101,3 +103,50 @@ class Personalizer:
         )
 
         return {"status" : "success"} 
+
+    async def get_project_data(self, graph_id, query = None):
+        try:
+            query = query or "What work was done by the developer, the bugs created, and the changes, as well as the positives and negatives"
+            data = await self._client.search(
+                query=query,
+                group_ids=[self._encode(f"{graph_id}")],
+                # search_filter=SearchFilters(node_labels=["Positives","Negatives"]),
+            )
+            nodes = []
+            for edge in data:
+                if "Positives" in edge.labels:
+                    nodes.append({
+                        "type" : "POSITVE",
+                        "summary" : edge.summary,
+                        "attributes" : edge.attributes
+                    })
+                elif "Negatives" in edge.labels:
+                    nodes.append({
+                        "type" : "NEGATIVES",
+                        "summary" : edge.summary,
+                        "attributes" : edge.attributes
+                    })
+            return nodes
+        except Exception as e:
+            print(f'[ERROR] Soemthing went wrong while getting project data from graphiti : {e}')
+            return []
+
+    async def get_user_persona(self, user_id):
+        try:
+            print(f"[DEBUG] Getting persona for user_id: {user_id}")
+            user_node = await self.zep_conn.user.get_node(user_id=user_id)
+            print(f"[DEBUG] User node response: {user_node}")
+            print(f"[DEBUG] User node type: {type(user_node)}")
+            
+            if user_node and hasattr(user_node, 'node') and user_node.node:
+                print(f"[DEBUG] User node.node: {user_node.node}")
+                print(f"[DEBUG] User node.node.summary: {user_node.node.summary}")
+                return user_node.node.summary or ""
+            else:
+                print(f"[DEBUG] No valid node found in response")
+                return ""
+        except Exception as e:
+            print(f"[ERROR] Error getting user persona: {e}")
+            import traceback
+            traceback.print_exc()
+            return ""

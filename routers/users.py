@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from dependencies.ch_db import get_ch_session
 from services.zep_store import get_personalizer
 from services.ch_users import list_users_ch, list_users_paginated_ch, get_developer_ch
+from services.graphiti.graphiti_store import get_graphitit_personalizer
 import logging
 
 logger = logging.getLogger(__name__)
@@ -58,11 +59,12 @@ async def get_developer(
     Get detailed developer information including commit history, statistics, and AI-generated insights.
     """
     try:
-        personalizer = get_personalizer()
+        # personalizer = get_personalizer()
+        personalizer = get_graphitit_personalizer()
 
-        user_data = await personalizer.get_user_persona(
-            user_id=f"user_{email}"
-        )
+        # user_data = await personalizer.get_user_persona(
+        #     user_id=f"user_{email}"
+        # )
 
         project_data = None
         if project:
@@ -81,7 +83,7 @@ async def get_developer(
 
         # Build response matching the original format
         response = {
-            "user_data": user_data,
+            "user_data": "TBD",
             "projects": dev_data.get("projects", []),
             "stats": dev_data.get("stats", {}),
             "pagination": dev_data.get("pagination", {}),
