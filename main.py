@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import _all
+from routers import _all, users_router
 from contextlib import asynccontextmanager
 from services.db import init_mongo
 from dotenv import load_dotenv
@@ -11,10 +11,8 @@ def startup_():
     init_mongo()
 
 async def lifespan(app : FastAPI):
-
     load_dotenv()
     print(f"[LIFESPAN] Initializing app")
-    # startup_()
     init_graphiti()
     init_ch_engine()
     _graphiti = get_graphiti()
@@ -33,8 +31,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for _router in _all:
-    app.include_router(_router)
+app.include_router(users_router)
 
 print(f"[MAIN] App initialized from house-of-apps-ai-engineering-manager")
 
