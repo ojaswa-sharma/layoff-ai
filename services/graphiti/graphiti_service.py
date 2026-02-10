@@ -110,7 +110,6 @@ class Personalizer:
             data = await self._client.search(
                 query=query,
                 group_ids=[self._encode(f"{graph_id}")],
-                # search_filter=SearchFilters(node_labels=["Positives","Negatives"]),
             )
             nodes = []
             for edge in data:
