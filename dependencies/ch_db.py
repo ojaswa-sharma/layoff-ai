@@ -81,7 +81,8 @@ def init_ch_engine():
                 "secure": secure,
             },
             pool_size=5,
-            max_overflow=3
+            max_overflow=3,
+            pool_timeout=5
         )
 
 
