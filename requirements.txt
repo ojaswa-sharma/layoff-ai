@@ -12,3 +12,4 @@ graphiti-core[falkordb]
 sqlalchemy
 # clickhouse-connect[sqlalchemy]
 clickhouse-sqlalchemy
+gunicorn
