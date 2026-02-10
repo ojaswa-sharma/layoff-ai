@@ -179,7 +179,7 @@ async def summarize_and_upload(diff_text, name, mail, repo_name, commit_title, d
         # diff["mail"] = mail
         # diff["repo_name"] = repo_name
         # diff["commit_hash"] = commit_hash
-        zep = get_personalizer()
+        # zep = get_personalizer()
         graphiti = get_graphitit_personalizer()
         msg = botMessage(role="norole", content=f"""
     Repository: {repo_name}
