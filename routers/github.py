@@ -163,114 +163,118 @@ async def handle_push_event(request_data: dict, session: Session):
     - Idempotency checks
     - Lazy backfill triggering for repositories installed before this feature existed
     """
-    installation_id = request_data["installation"]["id"]
-    app_id, pem_data = get_github_credentials()
-    
-    repo_full_name = request_data["repository"]["full_name"]
-    repo_name = request_data["repository"]["name"]
-    repo_url = request_data["repository"]["html_url"]
-    
-    # Lazy backfill trigger: if repo doesn't exist or is not LIVE, trigger backfill
-    # This handles repositories installed before the installation.created feature existed
-    # Uses atomic update as a distributed lock to ensure only one backfill runs at a time
-    
-    # Check current repository status
-    repo_status = await get_repository_status_ch(
-        session,
-        repo_full_name,
-        installation_id,
-    )
-    
-    current_status = repo_status.get("sync_status") if repo_status else None
-    
-    # Trigger backfill if repository doesn't exist or is not LIVE
-    # Skip if already BACKFILLING (another process is handling it)
-    if current_status != SyncStatus.LIVE.value and current_status != SyncStatus.BACKFILLING.value:
-        # Try to set status to BACKFILLING (acts as distributed lock)
-        # For ClickHouse, we check and update atomically
-        if not repo_status or repo_status.get("sync_status") != SyncStatus.BACKFILLING.value:
-            success = await update_repository_status_ch(
-                session,
-                repo_full_name,
-                installation_id,
-                {
-                    "repository_name": repo_name,
-                    "sync_status": SyncStatus.BACKFILLING.value,
-                    "backfill_started_at": datetime.utcnow(),
-                    "error_message": None,
-                },
-            )
-            
-            # If update succeeded, trigger backfill
-            if success:
-                logger.info(
-                    f"Lazy backfill triggered for {repo_full_name} "
-                    f"(installation {installation_id}) - previous status: {current_status or 'missing'}"
-                )
-                
-                # Trigger backfill asynchronously (create new session for async task)
-                async def run_backfill():
-                    # ch_session = SessionLocal()
-                    ch_session = get_ch_session_direct()
-
-                    try:
-                        await backfill_repository_ch(
-                            repo_full_name=repo_full_name,
-                            repo_name=repo_name,
-                            repo_url=repo_url,
-                            installation_id=installation_id,
-                            app_id=app_id,
-                            private_key_pem=pem_data,
-                            session=ch_session,
-                            max_commits=BACKFILL_MAX_COMMITS,  # Hardcoded limit as requested
-                        )
-                    except Exception as e:
-                        logger.error(f"Error in async backfill for {repo_full_name}: {e}", exc_info=True)
-                    finally:
-                        ch_session.close()
-                
-                asyncio.create_task(run_backfill())
-        else:
-            # Another process is already backfilling (race condition handled)
-            logger.debug(
-                f"Backfill already in progress for {repo_full_name}, skipping trigger"
-            )
-    elif current_status == SyncStatus.BACKFILLING.value:
-        # Backfill already in progress
-        logger.debug(
-            f"Received webhook for {repo_full_name} while backfill in progress. "
-            "Processing commit anyway (idempotency will prevent duplicates)."
-        )
-    
-    # Process commits using shared processor (always, regardless of backfill status)
-    processed_count = 0
-    skipped_count = 0
-    
-    for commit in request_data.get("commits", []):
-        result = await process_commit_from_webhook(
-            commit_data=commit,
-            repo_full_name=repo_full_name,
-            repo_name=repo_name,
-            repo_url=repo_url,
-            installation_id=installation_id,
-            app_id=app_id,
-            private_key_pem=pem_data,
-            session=session,
-            skip_existing=True,  # Idempotency: skip existing commits
+    try:
+        installation_id = request_data["installation"]["id"]
+        app_id, pem_data = get_github_credentials()
+        
+        repo_full_name = request_data["repository"]["full_name"]
+        repo_name = request_data["repository"]["name"]
+        repo_url = request_data["repository"]["html_url"]
+        
+        # Lazy backfill trigger: if repo doesn't exist or is not LIVE, trigger backfill
+        # This handles repositories installed before the installation.created feature existed
+        # Uses atomic update as a distributed lock to ensure only one backfill runs at a time
+        
+        # Check current repository status
+        repo_status = await get_repository_status_ch(
+            session,
+            repo_full_name,
+            installation_id,
         )
         
-        if result is None:
-            skipped_count += 1
-        else:
-            processed_count += 1
-    
-    return {
-        "message": "Webhook processed successfully",
-        "event_type": "push",
-        "processed_commits": processed_count,
-        "skipped_commits": skipped_count,
-    }
+        current_status = repo_status.get("sync_status") if repo_status else None
+        
+        # Trigger backfill if repository doesn't exist or is not LIVE
+        # Skip if already BACKFILLING (another process is handling it)
+        if current_status != SyncStatus.LIVE.value and current_status != SyncStatus.BACKFILLING.value:
+            # Try to set status to BACKFILLING (acts as distributed lock)
+            # For ClickHouse, we check and update atomically
+            if not repo_status or repo_status.get("sync_status") != SyncStatus.BACKFILLING.value:
+                success = await update_repository_status_ch(
+                    session,
+                    repo_full_name,
+                    installation_id,
+                    {
+                        "repository_name": repo_name,
+                        "sync_status": SyncStatus.BACKFILLING.value,
+                        "backfill_started_at": datetime.utcnow(),
+                        "error_message": None,
+                    },
+                )
+                
+                # If update succeeded, trigger backfill
+                if success:
+                    logger.info(
+                        f"Lazy backfill triggered for {repo_full_name} "
+                        f"(installation {installation_id}) - previous status: {current_status or 'missing'}"
+                    )
+                    
+                    # Trigger backfill asynchronously (create new session for async task)
+                    async def run_backfill():
+                        # ch_session = SessionLocal()
+                        ch_session = get_ch_session_direct()
 
+                        try:
+                            await backfill_repository_ch(
+                                repo_full_name=repo_full_name,
+                                repo_name=repo_name,
+                                repo_url=repo_url,
+                                installation_id=installation_id,
+                                app_id=app_id,
+                                private_key_pem=pem_data,
+                                session=ch_session,
+                                max_commits=BACKFILL_MAX_COMMITS,  # Hardcoded limit as requested
+                            )
+                        except Exception as e:
+                            logger.error(f"Error in async backfill for {repo_full_name}: {e}", exc_info=True)
+                        finally:
+                            ch_session.close()
+                    
+                    asyncio.create_task(run_backfill())
+            else:
+                # Another process is already backfilling (race condition handled)
+                logger.debug(
+                    f"Backfill already in progress for {repo_full_name}, skipping trigger"
+                )
+        elif current_status == SyncStatus.BACKFILLING.value:
+            # Backfill already in progress
+            logger.debug(
+                f"Received webhook for {repo_full_name} while backfill in progress. "
+                "Processing commit anyway (idempotency will prevent duplicates)."
+            )
+        
+        # Process commits using shared processor (always, regardless of backfill status)
+        processed_count = 0
+        skipped_count = 0
+        
+        for commit in request_data.get("commits", []):
+            result = await process_commit_from_webhook(
+                commit_data=commit,
+                repo_full_name=repo_full_name,
+                repo_name=repo_name,
+                repo_url=repo_url,
+                installation_id=installation_id,
+                app_id=app_id,
+                private_key_pem=pem_data,
+                session=session,
+                skip_existing=True,  # Idempotency: skip existing commits
+            )
+            
+            if result is None:
+                skipped_count += 1
+            else:
+                processed_count += 1
+        
+        return {
+            "message": "Webhook processed successfully",
+            "event_type": "push",
+            "processed_commits": processed_count,
+            "skipped_commits": skipped_count,
+        }
+    except Exception as e:
+        print(f'[ERROR] Error while pushing from github : {e}')
+    finally:
+        session.close()
 
 async def handle_installation_created(request_data: dict, session: Session):
     """
