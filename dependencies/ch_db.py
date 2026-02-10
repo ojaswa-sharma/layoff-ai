@@ -79,7 +79,9 @@ def init_ch_engine():
             pool_pre_ping=True,  # Verify connections before using
             connect_args={
                 "secure": secure,
-            }
+            },
+            pool_size=5,
+            max_overflow=3
         )
 
 
