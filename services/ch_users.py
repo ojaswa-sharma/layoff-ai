@@ -314,62 +314,63 @@ async def get_developer_ch(
         # Single comprehensive query using window functions
         query = (
             select(
-                # Commit data for pagination
-                CommitCH.commit_hash,
-                CommitCH.message.label('commit_title'),
-                CommitCH.date,
-                CommitCH.repository_name,
-                CommitCH.changes,
-                CommitAnalysisCH.department,
-                CommitAnalysisCH.work_type,
-                CommitAnalysisCH.work_category,
-                CommitAnalysisCH.commiters_performance.label('performance'),
-                CommitAnalysisCH.commit_summary,
-                
-                # Row number for pagination
-                func.row_number().over(order_by=CommitCH.date.desc()).label('row_num'),
-                
-                # Total count
-                func.count().over().label('total_commits'),
-                
-                # Projects aggregation (all projects for this developer)
-                func.groupUniqArray(CommitCH.repository_name).over().label('all_projects'),
-                
-                # Per-project stats using conditional aggregation with windows
+                CommitCH.commit_hash.label("commit_hash"),
+                CommitCH.message.label("commit_title"),
+                CommitCH.date.label("date"),
+                CommitCH.repository_name.label("repository_name"),
+                CommitCH.changes.label("changes"),
+
+                CommitAnalysisCH.department.label("department"),
+                CommitAnalysisCH.work_type.label("work_type"),
+                CommitAnalysisCH.work_category.label("work_category"),
+                CommitAnalysisCH.commiters_performance.label("performance"),
+                CommitAnalysisCH.commit_summary.label("commit_summary"),
+
+                func.row_number().over(order_by=CommitCH.date.desc()).label("row_num"),
+                func.count().over().label("total_commits"),
+
+                func.groupUniqArray(CommitCH.repository_name).over().label("all_projects"),
+
                 func.groupArray(
                     func.tuple(
                         CommitCH.repository_name,
                         CommitCH.date,
                         CommitCH.commit_hash
                     )
-                ).over().label('project_data'),
-                
-                # Department stats
+                ).over().label("project_data"),
+
                 func.groupArray(
                     case(
-                        (CommitAnalysisCH.department.isnot(None) & (CommitAnalysisCH.department != ''), 
-                         CommitAnalysisCH.department),
+                        (
+                            CommitAnalysisCH.department.isnot(None)
+                            & (CommitAnalysisCH.department != ''),
+                            CommitAnalysisCH.department
+                        ),
                         else_=None
                     )
-                ).over().label('all_departments'),
-                
-                # Work type stats
+                ).over().label("all_departments"),
+
                 func.groupArray(
                     case(
-                        (CommitAnalysisCH.work_type.isnot(None) & (CommitAnalysisCH.work_type != ''), 
-                         CommitAnalysisCH.work_type),
+                        (
+                            CommitAnalysisCH.work_type.isnot(None)
+                            & (CommitAnalysisCH.work_type != ''),
+                            CommitAnalysisCH.work_type
+                        ),
                         else_=None
                     )
-                ).over().label('all_work_types'),
-                
-                # Work category stats
+                ).over().label("all_work_types"),
+
                 func.groupArray(
                     case(
-                        (CommitAnalysisCH.work_category.isnot(None) & (CommitAnalysisCH.work_category != ''), 
-                         CommitAnalysisCH.work_category),
+                        (
+                            CommitAnalysisCH.work_category.isnot(None)
+                            & (CommitAnalysisCH.work_category != ''),
+                            CommitAnalysisCH.work_category
+                        ),
                         else_=None
                     )
-                ).over().label('all_work_categories'),
+                ).over().label("all_work_categories"),
             )
             .select_from(CommitCH)
             .outerjoin(
