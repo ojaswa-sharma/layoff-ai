@@ -4,5 +4,3 @@ __pycache__
 .venv/
 .env
 *.pem
-
-test_ch.py
