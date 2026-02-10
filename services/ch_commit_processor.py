@@ -156,6 +156,8 @@ async def should_send_to_zep_ch(
         logger.error(f"Error checking Zep limit for {repo_name}: {e}")
         # On error, default to allowing submission to avoid blocking commits
         return True, False
+    finally:
+        session.close()
 
 
 async def process_commit_ch(
@@ -201,6 +203,8 @@ async def process_commit_ch(
     except Exception as e:
         logger.error(f"Error processing commit {commit.commit_hash}: {e}")
         return None
+    finally:
+        session.close()
 
 
 async def process_commit_from_webhook(
@@ -310,7 +314,7 @@ async def process_commit_from_webhook(
         
         # Trigger AI analysis asynchronously only if we haven't reached the Zep limit
         should_send= True
-        asyncio.create_task(summarize_and_upload(diff_text, commit_model.author, commit_model.email, repo_name, commit_model.message, session, commit_hash, commit_date))
+        asyncio.create_task(summarize_and_upload(diff_text, commit_model.author, commit_model.email, repo_name, commit_model.message, None, commit_hash, commit_date))
             # Create a new session for the async task since the current one will be closed            
 #             async def analyze_and_store():
 #                 ch_session = SessionLocal()
@@ -509,7 +513,7 @@ async def process_bitbucket_commit_from_webhook(
         # Trigger AI analysis asynchronously only if we haven't reached the Zep limit
         should_send = True
         if should_send:
-            asyncio.create_task(summarize_and_upload(diff_text, commit_model.author, commit_model.email, repo_name, commit_model.message, session, commit_hash, commit_date))
+            asyncio.create_task(summarize_and_upload(diff_text, commit_model.author, commit_model.email, repo_name, commit_model.message, None, commit_hash, commit_date))
             # Create a new session for the async task since the current one will be closed
 #             from dependencies.ch_db import SessionLocal
 #             from services.zep_store import get_personalizer, botMessage

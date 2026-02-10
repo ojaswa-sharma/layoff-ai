@@ -154,122 +154,127 @@ async def handle_push_event(request_data: dict, session: Session):
     - Lazy backfill triggering for repositories not yet synced
     """
     # Extract repository information from Bitbucket webhook payload
-    repository = request_data.get("repository", {})
-    repo_full_name = repository.get("full_name", "")  # workspace/repo
-    repo_name = repository.get("name", "")
-    repo_url = repository.get("links", {}).get("html", {}).get("href", "")
-    
-    # Extract workspace information
-    workspace = repository.get("workspace", {})
-    workspace_slug = workspace.get("slug", "") or workspace.get("uuid", "")
-    
-    if not repo_full_name or not workspace_slug:
-        logger.error("Missing repository or workspace info in webhook payload")
-        raise HTTPException(status_code=400, detail="Missing repository or workspace information")
-    
-    # Convert workspace slug to integer for installation_id field (hash-based)
-    # This ensures compatibility with the Commit model which expects int
-    workspace_id = int(hashlib.md5(workspace_slug.encode()).hexdigest()[:8], 16)
-    
-    # Lazy backfill trigger: if repo doesn't exist or is not LIVE, trigger backfill
-    # Uses atomic update as a distributed lock to ensure only one backfill runs at a time
-    
-    # Check current repository status
-    repo_status = await get_repository_status_ch(
-        session,
-        repo_full_name,
-        workspace_id,
-    )
-    
-    current_status = repo_status.get("sync_status") if repo_status else None
-    
-    # Trigger backfill if repository doesn't exist or is not LIVE
-    # Skip if already BACKFILLING (another process is handling it)
-    if current_status != SyncStatus.LIVE.value and current_status != SyncStatus.BACKFILLING.value:
-        # Try to set status to BACKFILLING (acts as distributed lock)
-        # For ClickHouse, we check and update atomically
-        if not repo_status or repo_status.get("sync_status") != SyncStatus.BACKFILLING.value:
-            success = await update_repository_status_ch(
-                session,
-                repo_full_name,
-                workspace_id,
-                {
-                    "repository_name": repo_name,
-                    "sync_status": SyncStatus.BACKFILLING.value,
-                    "backfill_started_at": datetime.utcnow(),
-                    "error_message": None,
-                },
-            )
-            
-            if success:
-                logger.info(
-                    f"Lazy backfill triggered for Bitbucket {repo_full_name} "
-                    f"(workspace {workspace_id}) - previous status: {current_status or 'missing'}"
+    try:
+        repository = request_data.get("repository", {})
+        repo_full_name = repository.get("full_name", "")  # workspace/repo
+        repo_name = repository.get("name", "")
+        repo_url = repository.get("links", {}).get("html", {}).get("href", "")
+        
+        # Extract workspace information
+        workspace = repository.get("workspace", {})
+        workspace_slug = workspace.get("slug", "") or workspace.get("uuid", "")
+        
+        if not repo_full_name or not workspace_slug:
+            logger.error("Missing repository or workspace info in webhook payload")
+            raise HTTPException(status_code=400, detail="Missing repository or workspace information")
+        
+        # Convert workspace slug to integer for installation_id field (hash-based)
+        # This ensures compatibility with the Commit model which expects int
+        workspace_id = int(hashlib.md5(workspace_slug.encode()).hexdigest()[:8], 16)
+        
+        # Lazy backfill trigger: if repo doesn't exist or is not LIVE, trigger backfill
+        # Uses atomic update as a distributed lock to ensure only one backfill runs at a time
+        
+        # Check current repository status
+        repo_status = await get_repository_status_ch(
+            session,
+            repo_full_name,
+            workspace_id,
+        )
+        
+        current_status = repo_status.get("sync_status") if repo_status else None
+        
+        # Trigger backfill if repository doesn't exist or is not LIVE
+        # Skip if already BACKFILLING (another process is handling it)
+        if current_status != SyncStatus.LIVE.value and current_status != SyncStatus.BACKFILLING.value:
+            # Try to set status to BACKFILLING (acts as distributed lock)
+            # For ClickHouse, we check and update atomically
+            if not repo_status or repo_status.get("sync_status") != SyncStatus.BACKFILLING.value:
+                success = await update_repository_status_ch(
+                    session,
+                    repo_full_name,
+                    workspace_id,
+                    {
+                        "repository_name": repo_name,
+                        "sync_status": SyncStatus.BACKFILLING.value,
+                        "backfill_started_at": datetime.utcnow(),
+                        "error_message": None,
+                    },
                 )
                 
-                async def run_backfill():
-                    ch_session = get_ch_session_direct()
-                    # ch_session = get_ch_db()
-                    # ch_session = await anext(get_ch_session())
-                    try:
-                        from services.ch_backfill import backfill_repository_ch
-                        await backfill_repository_ch(
-                            repo_full_name=repo_full_name,
-                            repo_name=repo_name,
-                            repo_url=repo_url,
-                            installation_id=workspace_id,
-                            session=ch_session,
-                            source="bitbucket",
-                            max_commits=BACKFILL_MAX_COMMITS,
-                        )
-                    except Exception as e:
-                        logger.error(f"Error in async backfill for Bitbucket {repo_full_name}: {e}", exc_info=True)
-                    finally:
-                        ch_session.close()
-                
-                asyncio.create_task(run_backfill())
-        else:
-            # Another process is already backfilling (race condition handled)
-            logger.debug(
-                f"Backfill already in progress for Bitbucket {repo_full_name}, skipping trigger"
-            )
-    elif current_status == SyncStatus.BACKFILLING.value:
-        # Backfill already in progress
-        logger.debug(
-            f"Received webhook for Bitbucket {repo_full_name} while backfill in progress. "
-            "Processing commit anyway (idempotency will prevent duplicates)."
-        )
-    
-    # Process commits from push changes
-    # Bitbucket push webhook structure: push.changes[].commits[]
-    processed_count = 0
-    skipped_count = 0
-    
-    push_data = request_data.get("push", {})
-    changes = push_data.get("changes", [])
-    
-    for change in changes:
-        commits = change.get("commits", [])
-        
-        for commit in commits:
-            result = await process_bitbucket_commit_from_webhook(
-                commit_data=commit,
-                repo_full_name=repo_full_name,
-                repo_name=repo_name,
-                repo_url=repo_url,
-                workspace_id=workspace_id,
-                session=session,
-                skip_existing=True,  # Idempotency: skip existing commits
-            )
-            
-            if result is None:
-                skipped_count += 1
+                if success:
+                    logger.info(
+                        f"Lazy backfill triggered for Bitbucket {repo_full_name} "
+                        f"(workspace {workspace_id}) - previous status: {current_status or 'missing'}"
+                    )
+                    
+                    async def run_backfill():
+                        ch_session = get_ch_session_direct()
+                        # ch_session = get_ch_db()
+                        # ch_session = await anext(get_ch_session())
+                        try:
+                            from services.ch_backfill import backfill_repository_ch
+                            await backfill_repository_ch(
+                                repo_full_name=repo_full_name,
+                                repo_name=repo_name,
+                                repo_url=repo_url,
+                                installation_id=workspace_id,
+                                session=ch_session,
+                                source="bitbucket",
+                                max_commits=BACKFILL_MAX_COMMITS,
+                            )
+                        except Exception as e:
+                            logger.error(f"Error in async backfill for Bitbucket {repo_full_name}: {e}", exc_info=True)
+                        finally:
+                            ch_session.close()
+                    
+                    asyncio.create_task(run_backfill())
             else:
-                processed_count += 1
-    
-    return {
-        "message": "Webhook processed successfully",
-        "event_type": "repo:push",
-        "processed_commits": processed_count,
-        "skipped_commits": skipped_count,
-    }
+                # Another process is already backfilling (race condition handled)
+                logger.debug(
+                    f"Backfill already in progress for Bitbucket {repo_full_name}, skipping trigger"
+                )
+        elif current_status == SyncStatus.BACKFILLING.value:
+            # Backfill already in progress
+            logger.debug(
+                f"Received webhook for Bitbucket {repo_full_name} while backfill in progress. "
+                "Processing commit anyway (idempotency will prevent duplicates)."
+            )
+        
+        # Process commits from push changes
+        # Bitbucket push webhook structure: push.changes[].commits[]
+        processed_count = 0
+        skipped_count = 0
+        
+        push_data = request_data.get("push", {})
+        changes = push_data.get("changes", [])
+        
+        for change in changes:
+            commits = change.get("commits", [])
+            
+            for commit in commits:
+                result = await process_bitbucket_commit_from_webhook(
+                    commit_data=commit,
+                    repo_full_name=repo_full_name,
+                    repo_name=repo_name,
+                    repo_url=repo_url,
+                    workspace_id=workspace_id,
+                    session=session,
+                    skip_existing=True,  # Idempotency: skip existing commits
+                )
+                
+                if result is None:
+                    skipped_count += 1
+                else:
+                    processed_count += 1
+
+        return {
+            "message": "Webhook processed successfully",
+            "event_type": "repo:push",
+            "processed_commits": processed_count,
+            "skipped_commits": skipped_count,
+        }
+    except Exception as e:
+        print(f"[ERROR] Error while pushing event : {e}")
+    finally:
+        session.close()
