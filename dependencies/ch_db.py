@@ -1,6 +1,5 @@
 """
 SQLAlchemy setup for ClickHouse integration.
-
 This module provides SQLAlchemy engine, session factory, and FastAPI dependency
 for ClickHouse database operations using the clickhouse-sqlalchemy dialect.
 """
@@ -8,89 +7,100 @@ import os
 import logging
 from typing import Generator
 from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker, Session, scoped_session
+from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.ext.declarative import declarative_base
+from clickhouse_sqlalchemy import get_declarative_base
+
 from dotenv import load_dotenv
 
 load_dotenv()
-
 logger = logging.getLogger(__name__)
 
-# SQLAlchemy declarative base for ClickHouse models
-Base = declarative_base()
+Base = get_declarative_base()
 
-# Global engine and session factory
 engine = None
 SessionLocal = None
 
 def add_materialized_change_columns(engine):
-    with engine.begin() as conn:
-        conn.execute(text("""
-            ALTER TABLE commits
-            ADD COLUMN IF NOT EXISTS additions Int32
-            MATERIALIZED JSONExtractInt(changes, 'additions')
-        """))
-        conn.execute(text("""
-            ALTER TABLE commits
-            ADD COLUMN IF NOT EXISTS deletions Int32
-            MATERIALIZED JSONExtractInt(changes, 'deletions')
-        """))
-        conn.execute(text("OPTIMIZE TABLE commits FINAL"))
-
-
+    """Add materialized columns for JSON extraction if they don't exist."""
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("""
+                ALTER TABLE commits
+                ADD COLUMN IF NOT EXISTS additions Int32
+                MATERIALIZED JSONExtractInt(changes, 'additions')
+            """))
+            conn.execute(text("""
+                ALTER TABLE commits
+                ADD COLUMN IF NOT EXISTS deletions Int32
+                MATERIALIZED JSONExtractInt(changes, 'deletions')
+            """))
+            # conn.execute(text("OPTIMIZE TABLE commits FINAL"))
+        logger.info("Materialized columns added successfully")
+    except Exception as e:
+        logger.warning(f"Could not add materialized columns: {e}")
 
 def init_ch_engine():
     """
     Initialize SQLAlchemy engine for ClickHouse.
-    
     Uses environment variables:
     - CLICKHOUSE_HOST
-    - CLICKHOUSE_PORT
+    - CLICKHOUSE_PORT (default: 9440 for secure, 9000 for non-secure)
     - CLICKHOUSE_USERNAME
     - CLICKHOUSE_PASSWORD
+    - CLICKHOUSE_DATABASE (default: default)
     - CLICKHOUSE_SECURE (True/False)
-    
-    Connection string format: clickhouse://[user[:password]@][host][:port][/database]
+    - CLICKHOUSE_COMPRESSION (True/False, default: True)
     """
     global engine, SessionLocal, Base
     
     try:
         host = os.getenv("CLICKHOUSE_HOST")
-        port = os.getenv("CLICKHOUSE_PORT")
-        username = os.getenv("CLICKHOUSE_USERNAME")
+        port = os.getenv("CLICKHOUSE_PORT", "9440")
+        username = os.getenv("CLICKHOUSE_USERNAME", "default")
         password = os.getenv("CLICKHOUSE_PASSWORD")
-        secure = os.getenv("CLICKHOUSE_SECURE", "False") == "True"
+        database = os.getenv("CLICKHOUSE_DATABASE", "default")
+        secure = os.getenv("CLICKHOUSE_SECURE", "True") == "True"
+        compression = os.getenv("CLICKHOUSE_COMPRESSION", "True") == "True"
         
-        # Build connection string
-        # For secure connections, use clickhouses://
-        # protocol = "clickhouses" if secure else "clickhouse"
-        protocol= "clickhousedb+connect"
+        protocol = "clickhouse+native"
         
         if password:
-            connection_string = f"{protocol}://{username}:{password}@{host}:{port}/default"
+            base_url = f"{protocol}://{username}:{password}@{host}:{port}/{database}"
         else:
-            connection_string = f"{protocol}://{username}@{host}:{port}/default"
+            base_url = f"{protocol}://{username}@{host}:{port}/{database}"
         
-        # Create engine
-        # Note: clickhouse-sqlalchemy may require specific parameters
+        query_params = []
+        if secure:
+            query_params.append("secure=True")
+            query_params.append("verify=False")
+        
+        connection_string = base_url
+        if query_params:
+            connection_string = f"{base_url}?{'&'.join(query_params)}"
+        
+        logger.info(f"Connecting to: {protocol}://{username}:***@{host}:{port}/{database}?{','.join(query_params)}")
+        
         engine = create_engine(
             connection_string,
-            echo=False,  # Set to True for SQL query logging
-            pool_pre_ping=True,  # Verify connections before using
-            connect_args={
-                "secure": secure,
-            },
-            pool_size=5,
-            max_overflow=3,
-            pool_timeout=5
+            echo=False,
+            pool_pre_ping=True,
+            pool_size=50,
+            max_overflow=5,
+            pool_timeout=30,
+            pool_recycle=3600,
         )
-
-
+        
+        logger.info("Testing connection...")
+        # with engine.connect() as conn:
+        #     result = conn.execute(text("SELECT 1"))
+        #     result.fetchone()
+        # logger.info("Connection test successful")
+        
         Base.metadata.create_all(bind=engine)
-
+        
         add_materialized_change_columns(engine)
-
-
+        
         SessionLocal = sessionmaker(
             autocommit=False,
             autoflush=False,
@@ -98,18 +108,16 @@ def init_ch_engine():
             expire_on_commit=False
         )
         
-        logger.info("SQLAlchemy ClickHouse engine initialized successfully")
+        logger.info(f"SQLAlchemy ClickHouse engine initialized successfully")
+        
     except Exception as e:
-        logger.error(f"Failed to initialize SQLAlchemy ClickHouse engine: {e}")
+        logger.error(f"Failed to initialize SQLAlchemy ClickHouse engine: {e}", exc_info=True)
         raise
-
 
 def get_ch_session() -> Generator[Session, None, None]:
     """
     FastAPI dependency to get SQLAlchemy session for ClickHouse.
-    
     Yields a database session and ensures it's closed after use.
-    Similar to get_mongo_db() pattern.
     
     Usage:
         @router.get("/endpoint")
@@ -126,7 +134,6 @@ def get_ch_session() -> Generator[Session, None, None]:
     finally:
         session.close()
 
-
 def get_ch_db():
     """
     Alias for get_ch_session() for backward compatibility.
@@ -134,6 +141,10 @@ def get_ch_db():
     return get_ch_session()
 
 def get_ch_session_direct() -> Session:
+    """
+    Get a ClickHouse session directly (not as a generator).
+    Remember to close the session manually when done.
+    """
     if SessionLocal is None:
         init_ch_engine()
     return SessionLocal()

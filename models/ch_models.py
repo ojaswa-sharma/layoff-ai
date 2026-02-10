@@ -8,16 +8,18 @@ from sqlalchemy import Column, Integer, DateTime, text, Computed
 from sqlalchemy.orm import column_property
 from dependencies.ch_db import Base
 # from clickhouse_connect.cc_sqlalchemy import engines
-from clickhouse_connect.cc_sqlalchemy.ddl.tableengine import MergeTree
+# from clickhouse_connect.cc_sqlalchemy.ddl.tableengine import MergeTree
 from sqlalchemy.sql import literal_column
-from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import LowCardinality, String
+# from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import LowCardinality, String
+from clickhouse_sqlalchemy import engines
+from clickhouse_sqlalchemy.types import LowCardinality, String
 
 
 class CommitCH(Base):
     __tablename__ = "commits"
 
     __table_args__ = (
-        MergeTree(
+        engines.MergeTree(
             order_by=("email" ,"repository_name", "date")
         ),
     )
@@ -80,7 +82,7 @@ class PRMergeCH(Base):
     __tablename__ = "pr_merges"
 
     __table_args__ = (
-        MergeTree(
+        engines.MergeTree(
             order_by=("repository_url", "merge_commit_hash", "installation_id"),
         ),
     )
@@ -131,7 +133,7 @@ class CommitAnalysisCH(Base):
     __tablename__ = "commit_analysis"
 
     __table_args__ = (
-        MergeTree(
+        engines.MergeTree(
             order_by=("commit_hash", "email", "repo_name"),
         ),
     )
@@ -176,7 +178,7 @@ class RepoSyncEventCH(Base):
     __tablename__ = "repo_sync_events"
 
     __table_args__ = (
-        MergeTree(
+        engines.MergeTree(
             order_by=("repository_full_name", "installation_id"),
         ),
     )
