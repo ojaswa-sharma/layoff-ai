@@ -168,6 +168,7 @@ async def list_users_paginated_ch(session, page: int = 1, limit: int = 10):
     # Repo level aggregation
     repo_agg = (
         select(
+            func.any(CommitCH.author).label("author"),
             CommitCH.email.label("email"),
             CommitCH.repository_name.label("repo_name"),
             func.max(CommitCH.date).label("repo_last_commit"),
@@ -189,6 +190,7 @@ async def list_users_paginated_ch(session, page: int = 1, limit: int = 10):
     # User level aggregation with separate arrays
     user_agg = (
         select(
+            func.any(repo_agg.c.author).label("author"),
             repo_agg.c.email,
             func.max(repo_agg.c.repo_last_commit).label("last_commit"),
             func.sum(repo_agg.c.repo_additions).label("total_additions"),
@@ -261,6 +263,7 @@ async def list_users_paginated_ch(session, page: int = 1, limit: int = 10):
             },
             "status": status,
             "total_commits": r.total_commits,
+            "author" : r.author
         })
 
     return {

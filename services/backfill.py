@@ -160,6 +160,12 @@ async def fetch_repository_commits(
             all_commits.extend(commits)
             
             # Check if we've hit the max commits limit
+            if isinstance(max_commits, str):
+                try:
+                    max_commits = int(max_commits)
+                except:
+                    print(f"[ERROR] MAX COMMITS : {max_commits} could not be parsed")
+                    max_commits = 25
             if max_commits and len(all_commits) >= max_commits:
                 all_commits = all_commits[:max_commits]
                 break
