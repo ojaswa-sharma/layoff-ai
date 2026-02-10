@@ -10,6 +10,7 @@ class BackgroundWorker:
         self.max_workers = max_workers
         self.workers = []
         self.running = False
+        self._was = False
 
     async def start(self):
         if self.running:
@@ -42,6 +43,7 @@ class BackgroundWorker:
         This provides backpressure to prevent memory exhaustion.
         """
         try:
+            self._was = False
             await self.queue.put((func, args, kwargs))
             return True
         except Exception as e:
@@ -51,12 +53,13 @@ class BackgroundWorker:
     async def _worker(self, worker_id):
         logger.info(f"Worker {worker_id} started")
         while self.running:
+            if not self._was:
+                print(f"[TASKS] Remaining tasks : {(size_:=self.queue.qsize())}")
+                if size_ == 0:
+                    self._was = True
             try:
-                # Wait for a task
                 func, args, kwargs = await self.queue.get()
-                
                 try:
-                    # Execute the task
                     if asyncio.iscoroutinefunction(func):
                         await func(*args, **kwargs)
                     else:
@@ -66,21 +69,17 @@ class BackgroundWorker:
                 finally:
                     self.queue.task_done()
                     
-                    # Explicitly clear references to help GC
                     del func
                     del args
                     del kwargs
                     
-                    # Force garbage collection periodically or after large tasks
-                    # This helps release memory immediately instead of waiting for Python's GC
                     gc.collect()
-                    
             except asyncio.CancelledError:
                 logger.info(f"Worker {worker_id} cancelled")
                 break
             except Exception as e:
                 logger.error(f"Worker {worker_id} error: {e}", exc_info=True)
-                await asyncio.sleep(1)  # Prevent tight loop on error
+                await asyncio.sleep(1)
 
 # Global instance
 worker_manager = BackgroundWorker(max_workers=5, max_queue_size=50)
