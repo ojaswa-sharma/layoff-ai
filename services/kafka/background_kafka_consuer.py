@@ -1,6 +1,7 @@
 import asyncio
 from aiokafka import AIOKafkaConsumer
 from services.ai_service import summarize_and_upload
+from dependencies.json_encoder import DateTimeEncoder, datetime_decoder
 import json
 import os
 
@@ -47,7 +48,7 @@ class BackgroundKafkaConsumer:
             async for msg in self._consumer:
                 if not self._running:
                     break
-                commit_json = json.loads(msg.value.decode())
+                commit_json = json.loads(msg.value.decode(), object_hook=datetime_decoder)
                 await self._execute(commit_json)
         except asyncio.CancelledError:
             pass

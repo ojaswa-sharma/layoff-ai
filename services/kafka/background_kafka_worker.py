@@ -2,6 +2,8 @@ import asyncio
 import logging
 from aiokafka import AIOKafkaProducer
 from kafka.admin import KafkaAdminClient, NewTopic
+from dependencies.json_encoder import DateTimeEncoder, datetime_decoder
+
 import os
 import json
 
@@ -48,7 +50,7 @@ class BackgroundProducer:
 
         try:
             if not isinstance(data, str):
-                json_data = json.dumps(data).encode()
+                json_data = json.dumps(data, cls=DateTimeEncoder).encode()
             else:
                 json_data = data.encode()
             await self._producer.send_and_wait(topic=topic, value=json_data)
