@@ -13,3 +13,5 @@ sqlalchemy
 # clickhouse-connect[sqlalchemy]
 clickhouse-sqlalchemy
 gunicorn
+aiokafka
+kafka-python
