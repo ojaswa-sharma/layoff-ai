@@ -34,5 +34,3 @@ app.add_middleware(
 app.include_router(users_router)
 
 print(f"[MAIN] App initialized from house-of-apps-ai-engineering-manager")
-
-print("this is for test commit")
