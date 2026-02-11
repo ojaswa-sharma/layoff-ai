@@ -19,6 +19,7 @@ class BackgroundKafkaConsumer:
         self._running = False
         self._worker_task = None
         self._semaphore = asyncio.Semaphore(5)
+        self._tasks = set()
     
     async def startup(self):
         if self._running:
@@ -49,16 +50,21 @@ class BackgroundKafkaConsumer:
                 if not self._running:
                     break
                 commit_json = json.loads(msg.value.decode(), object_hook=datetime_decoder)
-                await self._execute(commit_json)
+                await self._semaphore.acquire()
+                task = asyncio.create_task(self._execute(commit_json))
+                self._tasks.add(task)
+                task.add_done_callback(self._tasks.discard)
         except asyncio.CancelledError:
             pass
     
     async def _execute(self, data):
-        async with self._semaphore:
-            try:
-                await summarize_and_upload(*data)
-            except Exception as e:
-                print(f"[ERROR] Error while summarizing : {e}")
+        # async with self._semaphore:
+        try:
+            await summarize_and_upload(*data)
+        except Exception as e:
+            print(f"[ERROR] Error while summarizing : {e}")
+        finally:
+            self._semaphore.release()
 
 if __name__ == "__main__":
     from services.kafka.background_kafka_worker import BackgroundProducer

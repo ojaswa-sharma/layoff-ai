@@ -110,6 +110,7 @@ class Personalizer:
             data = await self._client.search(
                 query=query,
                 group_ids=[self._encode(f"{graph_id}")],
+                # search_filter=SearchFilters(node_labels=["Positives","Negatives"]),
             )
             nodes = []
             for edge in data:
@@ -128,7 +129,7 @@ class Personalizer:
             return nodes
         except Exception as e:
             print(f'[ERROR] Soemthing went wrong while getting project data from graphiti : {e}')
-            return []
+
 
     async def get_user_persona(self, user_id):
         try:

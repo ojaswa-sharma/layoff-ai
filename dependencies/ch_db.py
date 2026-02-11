@@ -22,7 +22,6 @@ engine = None
 SessionLocal = None
 
 def add_materialized_change_columns(engine):
-    """Add materialized columns for JSON extraction if they don't exist."""
     try:
         with engine.begin() as conn:
             conn.execute(text("""
@@ -64,17 +63,6 @@ def add_materialized_change_columns(engine):
         logger.warning(f"Could not add materialized columns/view: {e}")
 
 def init_ch_engine():
-    """
-    Initialize SQLAlchemy engine for ClickHouse.
-    Uses environment variables:
-    - CLICKHOUSE_HOST
-    - CLICKHOUSE_PORT (default: 9440 for secure, 9000 for non-secure)
-    - CLICKHOUSE_USERNAME
-    - CLICKHOUSE_PASSWORD
-    - CLICKHOUSE_DATABASE (default: default)
-    - CLICKHOUSE_SECURE (True/False)
-    - CLICKHOUSE_COMPRESSION (True/False, default: True)
-    """
     global engine, SessionLocal, Base
     
     try:

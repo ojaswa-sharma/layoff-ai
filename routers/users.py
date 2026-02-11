@@ -6,6 +6,7 @@ from services.clickhouse_service.ch_users import list_users_ch, list_users_pagin
 from services.graphiti.graphiti_store import get_graphitit_personalizer
 import logging
 from dependencies.auth import verify_auth_token
+from models.orders import OrderBy, OrderDir
 
 logger = logging.getLogger(__name__)
 
@@ -38,12 +39,15 @@ async def list_users_paginated(
     session: Session = Depends(get_ch_session),
     page: int = Query(1, ge=1),
     limit: int = Query(10, ge=1, le=100),
+    search : str = Query(None),
+    order_by : OrderBy = Query(OrderBy.email),
+    order_dir : OrderDir = Query(OrderDir.asc)
 ):
     """
     List users with pagination and repository statistics.
     """
     try:
-        result = await list_users_paginated_ch(session, page=page, limit=limit)
+        result = await list_users_paginated_ch(session, page=page, limit=limit, search=search, order_by=order_by, order_dir=order_by.value)
         return result
     except Exception as e:
         logger.error(f"Error listing paginated users: {e}")

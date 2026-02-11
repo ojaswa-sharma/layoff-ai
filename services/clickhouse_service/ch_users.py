@@ -160,12 +160,13 @@ async def list_users_ch(
         return []
 
 def aggregate(session, user_agg):
+    
     return session.execute(user_agg).fetchall()
 
-async def list_users_paginated_ch(session, page: int = 1, limit: int = 10):
+async def list_users_paginated_ch(session, page: int = 1, limit: int = 10, search : str = None, order_by = "author", order_dir = "ASC"):
     skip = (page - 1) * limit
 
-    query = text(f"""
+    base_query = f"""
     SELECT
         email,
         projects,
@@ -196,13 +197,25 @@ async def list_users_paginated_ch(session, page: int = 1, limit: int = 10):
             FROM user_repo_agg
             GROUP BY email, repo_name
         ) AS merged
+    """
+
+    if search is not None:
+        base_query += " WHERE match(author, :search)"
+
+    base_query += f"""
         GROUP BY email
         ORDER BY email
         LIMIT {limit} OFFSET {skip}
     ) AS final_users
-    """)
+    """
 
-    rows = await run_in_threadpool(session.execute, query)
+    query = text(base_query)
+    params = {}
+    if search is not None:
+        params["search"] = f"(?i){search}"
+
+
+    rows = await run_in_threadpool(session.execute, query, params)
     results = rows.fetchall()
 
     if not results:

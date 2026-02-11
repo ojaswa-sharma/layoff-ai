@@ -27,7 +27,6 @@ router = APIRouter(prefix="/github")
 BACKFILL_MAX_COMMITS = os.getenv("BACKFILL_MAX_COMMITS", 100)
 
 def get_github_credentials():
-    """Load GitHub App credentials from environment."""
     app_id = os.getenv("APP_ID")
     pem_path = os.getenv("GITHUB_PEM_PATH", "isometrik.pem")
     
