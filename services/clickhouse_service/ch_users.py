@@ -160,6 +160,7 @@ async def list_users_ch(
         return []
 
 def aggregate(session, user_agg):
+    
     return session.execute(user_agg).fetchall()
 
 async def list_users_paginated_ch(session, page: int = 1, limit: int = 10, search : str = None, order_by = "author", order_dir = "ASC"):
