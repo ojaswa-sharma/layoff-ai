@@ -135,7 +135,7 @@ class CommitAnalysisCH(Base):
 
     __table_args__ = (
         engines.MergeTree(
-            order_by=("commit_hash", "email", "repo_name"),
+            order_by=("email", "repo_name"),
         ),
     )
 
