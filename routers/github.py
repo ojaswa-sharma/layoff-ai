@@ -14,6 +14,8 @@ from models.commits import SyncStatus
 from services.clickhouse_service.ch_commit_processor import process_commit_from_webhook
 from services.clickhouse_service.ch_pr_merge_processor import process_github_pr_merge
 from services.clickhouse_service.ch_backfill import get_repository_status_ch, update_repository_status_ch, backfill_repository_ch
+from services.tech_stack_service import fetch_github_tech_stack
+from services.clickhouse_service.ch_tech_stack import insert_or_update_tech_stack_ch
 from dependencies.ch_db import get_ch_session, SessionLocal, get_ch_session_direct
 import logging
 from datetime import datetime
@@ -263,6 +265,31 @@ async def handle_push_event(request_data: dict, session: Session):
                 skipped_count += 1
             else:
                 processed_count += 1
+        
+        # Fetch and update tech stack after processing commits
+        # This is non-blocking - failures won't affect commit processing
+        try:
+            tech_stack_data = await fetch_github_tech_stack(
+                repo_full_name=repo_full_name,
+                app_id=app_id,
+                private_key_pem=pem_data,
+                installation_id=installation_id,
+            )
+            
+            if tech_stack_data:
+                await insert_or_update_tech_stack_ch(
+                    session=session,
+                    repository_full_name=repo_full_name,
+                    repository_name=repo_name,
+                    installation_id=installation_id,
+                    languages=tech_stack_data.get("languages"),
+                    topics=tech_stack_data.get("topics"),
+                    source=tech_stack_data.get("source", "github"),
+                )
+                logger.info(f"Tech stack updated for {repo_full_name}")
+        except Exception as e:
+            # Log error but don't fail the webhook - commit processing succeeded
+            logger.warning(f"Failed to fetch/update tech stack for {repo_full_name}: {e}", exc_info=True)
         
         return {
             "message": "Webhook processed successfully",
