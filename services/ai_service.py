@@ -6,7 +6,7 @@ from services.graphiti.graphiti_store import get_graphitit_personalizer
 import asyncio
 from dotenv import load_dotenv
 from fastapi.concurrency import run_in_threadpool
-from services.ch_ai_service import insert_commit_analysis_ch
+from services.clickhouse_service.ch_ai_service import insert_commit_analysis_ch
 from dependencies.ch_db import get_ch_session_direct
 from datetime import datetime
 

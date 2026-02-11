@@ -14,7 +14,6 @@ from models.commits import Commit, SyncStatus
 from models.ch_models import CommitCH, RepoSyncEventCH
 from services.git_diff import fetch_diff_from_webhook, fetch_bitbucket_diff, count_diff_stats
 from services.ai_service import summarize_and_upload
-from services.ch_ai_service import insert_commit_analysis_ch
 from services.background_worker import get_worker_manager
 from services.kafka.kafka_store import get_kafka_producer
 

@@ -11,9 +11,9 @@ import asyncio
 from dotenv import load_dotenv
 from sqlalchemy.orm import Session
 from models.commits import SyncStatus
-from services.ch_commit_processor import process_commit_from_webhook
-from services.ch_pr_merge_processor import process_github_pr_merge
-from services.ch_backfill import get_repository_status_ch, update_repository_status_ch, backfill_repository_ch
+from services.clickhouse_service.ch_commit_processor import process_commit_from_webhook
+from services.clickhouse_service.ch_pr_merge_processor import process_github_pr_merge
+from services.clickhouse_service.ch_backfill import get_repository_status_ch, update_repository_status_ch, backfill_repository_ch
 from dependencies.ch_db import get_ch_session, SessionLocal, get_ch_session_direct
 import logging
 from datetime import datetime
