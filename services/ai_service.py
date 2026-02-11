@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from fastapi.concurrency import run_in_threadpool
 from services.ch_ai_service import insert_commit_analysis_ch
 from dependencies.ch_db import get_ch_session_direct
+from datetime import datetime
 
 
 load_dotenv()
@@ -176,6 +177,8 @@ STRICT COMPLIANCE IS REQUIRED AT ALL TIMES.
 async def summarize_and_upload(diff_text, name, mail, repo_name, commit_title, db = None, commit_hash = None, commit_date = None):
     created_session = False
     try:
+        if isinstance(commit_date, str):
+            commit_date = datetime.fromisoformat(commit_date)
         diff = await summarie_diff(get_openai(), diff_text, name, mail, repo_name, commit_title)
         # actual_diff = diff.copy()
         # diff["mail"] = mail
@@ -202,6 +205,7 @@ async def summarize_and_upload(diff_text, name, mail, repo_name, commit_title, d
             created_session = True
             
         insert_commit_analysis_ch(db, diff, commit_hash, mail, repo_name)
+        print(f"[CLICKHOUSE] Added to clickhouse")
         await graphiti.add_to_graph(graph_id=f"{mail}_{repo_name}", message=msg.content, commit_hash=commit_hash, commit_date = commit_date)
     except Exception as e:
         print(f"[ERROR] Something went wrong during summarization : {e}")
