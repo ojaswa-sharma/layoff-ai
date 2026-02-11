@@ -12,7 +12,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from models.commits import Commit, SyncStatus
 from models.ch_models import CommitCH
-from services.ch_commit_processor import check_commit_exists_ch
+from services.clickhouse_service.ch_commit_processor import check_commit_exists_ch
 
 logger = logging.getLogger(__name__)
 
@@ -541,7 +541,7 @@ async def backfill_repository_ch(
     
     try:
         # Import here to avoid circular dependencies
-        from services.ch_commit_processor import process_commit_from_webhook, process_bitbucket_commit_from_webhook
+        from services.clickhouse_service.ch_commit_processor import process_commit_from_webhook, process_bitbucket_commit_from_webhook
         
         # Fetch commits based on source
         if source_lower == "github":

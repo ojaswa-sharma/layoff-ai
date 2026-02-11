@@ -10,9 +10,9 @@ import os
 import asyncio
 from sqlalchemy.orm import Session
 from models.commits import SyncStatus
-from services.ch_commit_processor import process_bitbucket_commit_from_webhook
-from services.ch_pr_merge_processor import process_bitbucket_pr_merge
-from services.ch_backfill import get_repository_status_ch, update_repository_status_ch
+from services.clickhouse_service.ch_commit_processor import process_bitbucket_commit_from_webhook
+from services.clickhouse_service.ch_pr_merge_processor import process_bitbucket_pr_merge
+from services.clickhouse_service.ch_backfill import get_repository_status_ch, update_repository_status_ch
 from dependencies.ch_db import get_ch_session, SessionLocal, get_ch_db, get_ch_session_direct
 import logging
 from datetime import datetime
@@ -213,7 +213,7 @@ async def handle_push_event(request_data: dict, session: Session):
                         # ch_session = get_ch_db()
                         # ch_session = await anext(get_ch_session())
                         try:
-                            from services.ch_backfill import backfill_repository_ch
+                            from services.clickhouse_service.ch_backfill import backfill_repository_ch
                             await backfill_repository_ch(
                                 repo_full_name=repo_full_name,
                                 repo_name=repo_name,
