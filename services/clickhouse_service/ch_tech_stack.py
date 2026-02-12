@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from models.ch_models import RepositoryTechStackCH
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +36,8 @@ async def insert_or_update_tech_stack_ch(
             "repository_full_name": repository_full_name,
             "installation_id": installation_id,
             "repository_name": repository_name,
-            "languages": languages,
-            "topics": topics,
+            "languages": json.dumps(languages),
+            "topics": json.dumps(topics),
             "last_updated": datetime.now(timezone.utc),
             "source": source,
         }
