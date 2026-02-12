@@ -248,3 +248,62 @@ class UserRepoAggregate(Base):
     last_commit_date = Column(
         AggregateFunction("max", DateTime)
     )
+
+
+class RepositoryTechStackCH(Base):
+    __tablename__ = "repository_tech_stack"
+
+    __table_args__ = (
+        engines.MergeTree(
+            order_by=("repository_full_name", "installation_id"),
+        ),
+    )
+
+    repository_full_name = Column(String, primary_key=True)
+    installation_id = Column(Integer, primary_key=True)
+
+    repository_name = Column(String, nullable=False)
+    languages = Column(String, nullable=True)  # JSON string: {"Python": 12345, "JavaScript": 6789}
+    topics = Column(String, nullable=True)  # JSON array string: ["python", "fastapi"]
+    last_updated = Column(DateTime, nullable=False)
+    source = Column(String, nullable=False)  # "github" or "bitbucket"
+
+    def to_dict(self) -> Dict[str, Any]:
+        languages_dict = None
+        if self.languages:
+            try:
+                languages_dict = json.loads(self.languages)
+            except Exception:
+                languages_dict = {}
+        
+        topics_list = None
+        if self.topics:
+            try:
+                topics_list = json.loads(self.topics)
+            except Exception:
+                topics_list = []
+
+        return {
+            "repository_full_name": self.repository_full_name,
+            "installation_id": self.installation_id,
+            "repository_name": self.repository_name,
+            "languages": languages_dict,
+            "topics": topics_list,
+            "last_updated": self.last_updated,
+            "source": self.source,
+        }
+
+    @classmethod
+    def from_dict(cls, tech_stack_dict: Dict[str, Any], session=None):
+        languages_json = json.dumps(tech_stack_dict.get("languages", {})) if tech_stack_dict.get("languages") else None
+        topics_json = json.dumps(tech_stack_dict.get("topics", [])) if tech_stack_dict.get("topics") else None
+        
+        return cls(
+            repository_full_name=tech_stack_dict.get("repository_full_name", ""),
+            installation_id=tech_stack_dict.get("installation_id", 0),
+            repository_name=tech_stack_dict.get("repository_name", ""),
+            languages=languages_json,
+            topics=topics_json,
+            last_updated=tech_stack_dict.get("last_updated"),
+            source=tech_stack_dict.get("source", "github"),
+        )

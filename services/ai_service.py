@@ -205,3 +205,4 @@ async def summarize_and_upload(diff_text, name, mail, repo_name, commit_title, d
     finally:
         if created_session and db:
             db.close()
+        
