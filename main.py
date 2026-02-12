@@ -7,8 +7,6 @@ from dotenv import load_dotenv
 from services.graphiti.init_client import init_graphiti, get_graphiti
 from dependencies.ch_db import init_ch_engine
 
-# def startup_():
-#     init_mongo()
 
 async def lifespan(app : FastAPI):
     load_dotenv()
