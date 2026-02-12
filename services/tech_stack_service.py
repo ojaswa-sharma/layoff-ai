@@ -175,6 +175,3 @@ async def fetch_github_tech_stack(
         }
 
 
-def test_func():
-    ...
-
