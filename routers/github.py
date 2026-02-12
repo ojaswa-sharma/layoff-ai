@@ -246,8 +246,6 @@ async def handle_push_event(request_data: dict, session: Session):
             else:
                 processed_count += 1
         
-        # Fetch and update tech stack after processing commits
-        # This is non-blocking - failures won't affect commit processing
         try:
             tech_stack_data = await fetch_github_tech_stack(
                 repo_full_name=repo_full_name,
@@ -257,18 +255,20 @@ async def handle_push_event(request_data: dict, session: Session):
             )
             
             if tech_stack_data:
-                await insert_or_update_tech_stack_ch(
-                    session=session,
-                    repository_full_name=repo_full_name,
-                    repository_name=repo_name,
-                    installation_id=installation_id,
-                    languages=tech_stack_data.get("languages"),
-                    topics=tech_stack_data.get("topics"),
-                    source=tech_stack_data.get("source", "github"),
-                )
-                logger.info(f"Tech stack updated for {repo_full_name}")
+                try:
+                    await insert_or_update_tech_stack_ch(
+                        session=session,
+                        repository_full_name=repo_full_name,
+                        repository_name=repo_name,
+                        installation_id=installation_id,
+                        languages=tech_stack_data.get("languages"),
+                        topics=tech_stack_data.get("topics"),
+                        source=tech_stack_data.get("source", "github"),
+                    )
+                    logger.info(f"Tech stack updated for {repo_full_name}")
+                except Exception as e:
+                    print(f"[ERROR] Something went wrong while fetching tech stack : {e}")
         except Exception as e:
-            # Log error but don't fail the webhook - commit processing succeeded
             logger.warning(f"Failed to fetch/update tech stack for {repo_full_name}: {e}", exc_info=True)
         
         return {
