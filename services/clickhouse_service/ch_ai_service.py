@@ -58,7 +58,6 @@ def insert_commit_analysis_ch(
         True if successful, False otherwise
     """
     try:
-        # Use provided values or extract from analysis dict
         final_commit_hash = commit_hash or analysis.get("commit_hash")
         final_email = email or analysis.get("mail")
         final_repo_name = repo_name or analysis.get("repo_name")
@@ -67,16 +66,12 @@ def insert_commit_analysis_ch(
             logger.warning("Cannot insert commit analysis: missing commit_hash")
             return False
         
-        # Check if already exists (idempotency)
-        # exists = await check_commit_analysis_exists_ch(session, final_commit_hash)
         exists = False
         if exists:
             logger.debug(f"Commit analysis for {final_commit_hash} already exists, skipping")
             return False
         
-        # Create model instance from dictionary
         analysis_ch = CommitAnalysisCH.from_dict(analysis)
-        # Override with provided values if given
         if commit_hash:
             analysis_ch.commit_hash = commit_hash
         if email:

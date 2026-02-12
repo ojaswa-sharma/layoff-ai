@@ -7,10 +7,7 @@ from typing import Dict, Any
 from sqlalchemy import Column, Integer, DateTime, text, Computed
 from sqlalchemy.orm import column_property
 from dependencies.ch_db import Base
-# from clickhouse_connect.cc_sqlalchemy import engines
-# from clickhouse_connect.cc_sqlalchemy.ddl.tableengine import MergeTree
 from sqlalchemy.sql import literal_column
-# from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import LowCardinality, String
 from clickhouse_sqlalchemy import engines
 from clickhouse_sqlalchemy.types import LowCardinality, String, AggregateFunction, UInt64, Int64
 

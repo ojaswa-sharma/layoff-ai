@@ -97,7 +97,6 @@ async def process_pr_merge_ch(
         PRMerge model if successfully processed, None if skipped
     """
     try:
-        # Check if PR merge already exists (idempotency)
         if skip_existing:
             exists = await check_pr_merge_exists_ch(
                 session,
@@ -111,7 +110,6 @@ async def process_pr_merge_ch(
                 )
                 return None
         
-        # Insert into ClickHouse
         success = await insert_pr_merge_ch(session, pr_merge)
         if not success:
             return None
@@ -157,7 +155,6 @@ async def process_github_pr_merge(
         PRMerge model if successfully processed, None if skipped
     """
     try:
-        # Extract PR information from GitHub webhook payload
         pr_number = pr_data.get("number")
         pr_title = pr_data.get("title", "")
         merged = pr_data.get("merged", False)
@@ -170,7 +167,6 @@ async def process_github_pr_merge(
             logger.debug(f"PR #{pr_number} was closed but not merged, skipping")
             return None
         
-        # Get merge commit hash
         merge_commit_hash = pr_data.get("merge_commit_sha")
         if not merge_commit_hash:
             logger.warning(f"PR #{pr_number} merge event missing merge_commit_sha")
@@ -178,17 +174,13 @@ async def process_github_pr_merge(
         
         merge_commit_hash_short = merge_commit_hash[:12]
         
-        # Extract merged_by information
-        # GitHub PR merge webhook has merged_by in pull_request.merged_by
         merged_by_info = pr_data.get("merged_by", {})
         merged_by_name = merged_by_info.get("login", "Unknown")
         merged_by_email = merged_by_info.get("email", "")
         
-        # If email is not available, try to get from user API or use login
         if not merged_by_email:
-            merged_by_email = f"{merged_by_name}@github.com"  # Fallback
+            merged_by_email = f"{merged_by_name}@github.com"
         
-        # Parse merge date
         merged_at_str = pr_data.get("merged_at")
         if merged_at_str:
             try:
@@ -201,7 +193,6 @@ async def process_github_pr_merge(
         else:
             merge_date = datetime.utcnow()
         
-        # Create PRMerge model
         pr_merge_model = PRMerge(
             pr_number=pr_number,
             pr_title=pr_title,
@@ -215,7 +206,6 @@ async def process_github_pr_merge(
             source="github",
         )
         
-        # Process using ClickHouse
         result = await process_pr_merge_ch(
             pr_merge_model,
             session,
@@ -260,7 +250,6 @@ async def process_bitbucket_pr_merge(
         PRMerge model if successfully processed, None if skipped
     """
     try:
-        # Extract PR information from Bitbucket webhook payload
         pr_number = pr_data.get("id")
         pr_title = pr_data.get("title", "")
         
@@ -268,12 +257,8 @@ async def process_bitbucket_pr_merge(
             logger.warning("PR merge event missing PR ID")
             return None
         
-        # Get merge commit hash from Bitbucket PR
-        # Bitbucket PR merge commit is in pullrequest.destination.commit.hash
-        # or we can get it from the merge commit itself
         merge_commit_info = pr_data.get("merge_commit")
         if not merge_commit_info:
-            # Try alternative location
             merge_commit_info = pr_data.get("destination", {}).get("commit", {})
         
         merge_commit_hash = merge_commit_info.get("hash", "") if merge_commit_info else ""
@@ -284,13 +269,10 @@ async def process_bitbucket_pr_merge(
         
         merge_commit_hash_short = merge_commit_hash[:12]
         
-        # Extract merged_by information
-        # Bitbucket PR merge webhook has author in pullrequest.author
         author_info = pr_data.get("author", {})
         merged_by_name = author_info.get("display_name", "Unknown")
         merged_by_email = author_info.get("email", "")
         
-        # Bitbucket author might be in raw format: "Name <email@example.com>"
         if not merged_by_email and "raw" in author_info:
             raw_author = author_info.get("raw", "")
             if " <" in raw_author and raw_author.endswith(">"):
@@ -298,12 +280,9 @@ async def process_bitbucket_pr_merge(
                 merged_by_name = parts[0]
                 merged_by_email = parts[1].rstrip(">")
         
-        # Fallback if email still not available
         if not merged_by_email:
             merged_by_email = f"{merged_by_name}@bitbucket.org"
         
-        # Parse merge date
-        # Bitbucket uses updated_on or created_on for merge time
         merged_at_str = pr_data.get("updated_on") or pr_data.get("created_on")
         if merged_at_str:
             try:
@@ -318,7 +297,6 @@ async def process_bitbucket_pr_merge(
         else:
             merge_date = datetime.utcnow()
         
-        # Create PRMerge model
         pr_merge_model = PRMerge(
             pr_number=pr_number,
             pr_title=pr_title,
@@ -332,7 +310,6 @@ async def process_bitbucket_pr_merge(
             source="bitbucket",
         )
         
-        # Process using ClickHouse
         result = await process_pr_merge_ch(
             pr_merge_model,
             session,

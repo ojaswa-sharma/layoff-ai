@@ -51,8 +51,6 @@ async def list_users_ch(
         List of user dictionaries with repository statistics
     """
     try:
-        # SQLAlchemy ORM query equivalent of MongoDB aggregation
-        # Note: We need to process changes in Python since ClickHouse stores JSON as string
         results = session.query(
             CommitCH.email,
             CommitCH.repository_name,
@@ -68,7 +66,6 @@ async def list_users_ch(
             func.max(CommitCH.date).desc(),
         ).all()
         
-        # Get all commits to calculate additions/deletions
         all_commits = session.query(
             CommitCH.email,
             CommitCH.repository_name,
@@ -78,7 +75,6 @@ async def list_users_ch(
             CommitCH.changes != '',
         ).all()
         
-        # Aggregate changes by email and repo
         changes_by_repo = {}
         commit_counts_by_repo = {}
         for commit in all_commits:
@@ -103,7 +99,6 @@ async def list_users_ch(
             total_additions = changes["additions"]
             total_deletions = changes["deletions"]
             
-            # Handle timezone-aware datetime
             if isinstance(last_commit, datetime):
                 if last_commit.tzinfo is None:
                     last_commit = last_commit.replace(tzinfo=timezone.utc)
@@ -308,12 +303,10 @@ async def get_developer_ch(
     try:
         skip = (page - 1) * limit
         
-        # Build filter conditions
         filters = [CommitCH.email == email]
         if project:
             filters.append(CommitCH.repository_name == project)
         
-        # Single comprehensive query using window functions
         query = (
             select(
                 CommitCH.commit_hash.label("commit_hash"),
@@ -383,7 +376,6 @@ async def get_developer_ch(
             .order_by(CommitCH.date.desc())
         )
         
-        # Execute query
         all_results = session.execute(query).fetchall()
         
         if not all_results:
@@ -402,29 +394,24 @@ async def get_developer_ch(
                 "commit_history": [],
             }
         
-        # Get stats from first row (window functions make them same for all rows)
         first_row = all_results[0]
         total_commits = first_row.total_commits
         
-        # Process departments
         departments = {}
         for dept in first_row.all_departments:
             if dept:
                 departments[dept] = departments.get(dept, 0) + 1
         
-        # Process work types
         work_types = {}
         for wt in first_row.all_work_types:
             if wt:
                 work_types[wt] = work_types.get(wt, 0) + 1
         
-        # Process work categories
         real_vs_fake = {}
         for cat in first_row.all_work_categories:
             if cat:
                 real_vs_fake[cat] = real_vs_fake.get(cat, 0) + 1
         
-        # Process projects from project_data
         projects_map = {}
         for repo_name, commit_date, commit_hash in first_row.project_data:
             if repo_name not in projects_map:
@@ -433,11 +420,9 @@ async def get_developer_ch(
                     'count': 0
                 }
             projects_map[repo_name]['count'] += 1
-            # Update last commit if this one is more recent
             if commit_date > projects_map[repo_name]['last_commit']:
                 projects_map[repo_name]['last_commit'] = commit_date
         
-        # Format projects
         projects = [
             {
                 "repository_name": repo_name,
@@ -451,7 +436,6 @@ async def get_developer_ch(
             )
         ]
         
-        # Filter commits for current page using row_num
         commit_history = []
         for row in all_results:
             if skip < row.row_num <= skip + limit:

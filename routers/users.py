@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from dependencies.ch_db import get_ch_session
-# from services.zep_store import get_personalizer
 from services.clickhouse_service.ch_users import list_users_ch, list_users_paginated_ch, get_developer_ch
 from services.graphiti.graphiti_store import get_graphitit_personalizer
 import logging

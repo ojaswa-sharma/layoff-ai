@@ -16,10 +16,10 @@ from services.clickhouse_service.ch_commit_processor import check_commit_exists_
 
 logger = logging.getLogger(__name__)
 
-BITBUCKET_MAX_COMMITS_PER_PAGE = 50  # Bitbucket API default pagination
+BITBUCKET_MAX_COMMITS_PER_PAGE = 50
 BITBUCKET_API = "https://api.bitbucket.org/2.0"
 GITHUB_API = "https://api.github.com"
-MAX_COMMITS_PER_PAGE = 100  # GitHub API max
+MAX_COMMITS_PER_PAGE = 100
 
 
 async def fetch_with_retry(
@@ -41,29 +41,25 @@ async def fetch_with_retry(
         try:
             resp = await session.get(url, headers=headers)
             
-            # Handle rate limiting
             if resp.status == 429:
                 retry_after = int(resp.headers.get("Retry-After", base_delay * (2 ** attempt)))
                 logger.warning(
                     f"Rate limited. Retrying after {retry_after}s (attempt {attempt + 1}/{max_retries})"
                 )
-                resp.close()  # Close the response before retrying
+                resp.close()
                 await asyncio.sleep(retry_after)
                 continue
             
-            # Handle server errors
             if resp.status >= 500:
                 if attempt < max_retries - 1:
                     delay = base_delay * (2 ** attempt)
                     logger.warning(
                         f"Server error {resp.status}. Retrying after {delay}s (attempt {attempt + 1}/{max_retries})"
                     )
-                    resp.close()  # Close the response before retrying
+                    resp.close()
                     await asyncio.sleep(delay)
                     continue
             
-            # For successful responses or other errors, return the response
-            # Caller must use it within an async context manager or read immediately
             return resp
                 
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
@@ -115,13 +111,11 @@ async def fetch_bitbucket_repository_commits(
                 "page": page,
             }
             
-            # Bitbucket API uses query parameters for date filtering
             if since:
                 params["since"] = since.isoformat()
             if until:
                 params["until"] = until.isoformat()
             
-            # Build URL with query parameters
             query_string = "&".join([f"{k}={v}" for k, v in params.items()])
             full_url = f"{url}?{query_string}"
             
@@ -142,7 +136,6 @@ async def fetch_bitbucket_repository_commits(
                 
                 data = await resp.json()
             finally:
-                # Ensure response is properly closed
                 resp.close()
             commits = data.get("values", [])
             
@@ -151,19 +144,16 @@ async def fetch_bitbucket_repository_commits(
             
             all_commits.extend(commits)
             
-            # Check if we've hit the max commits limit
             if max_commits and len(all_commits) >= max_commits:
                 all_commits = all_commits[:max_commits]
                 break
             
-            # Check if there are more pages
             next_url = data.get("next")
             if not next_url:
                 break
             
             page += 1
             
-            # Rate limiting: small delay between pages
             await asyncio.sleep(0.5)
     
     logger.info(f"Fetched {len(all_commits)} commits from Bitbucket {repo_full_name}")
@@ -237,7 +227,6 @@ async def fetch_repository_commits(
                 
                 commits = await resp.json()
             finally:
-                # Ensure response is properly closed
                 resp.close()
             
             if not commits:
@@ -245,7 +234,6 @@ async def fetch_repository_commits(
             
             all_commits.extend(commits)
             
-            # Check if we've hit the max commits limit
             if isinstance(max_commits, str):
                 try:
                     max_commits = int(max_commits)
@@ -256,14 +244,12 @@ async def fetch_repository_commits(
                 all_commits = all_commits[:max_commits]
                 break
             
-            # Check if there are more pages
             link_header = resp.headers.get("Link", "")
             if 'rel="next"' not in link_header:
                 break
             
             page += 1
             
-            # Rate limiting: small delay between pages
             await asyncio.sleep(0.5)
     
     logger.info(f"Fetched {len(all_commits)} commits from {repo_full_name}")
@@ -317,7 +303,6 @@ async def insert_commits_batch_ch(
         except Exception as e:
             session.rollback()
             logger.error(f"Error inserting commits batch into ClickHouse: {e}")
-            # Return what we attempted
             inserted_count = len(commits_to_insert)
     
     return {
@@ -348,7 +333,6 @@ async def update_repository_status_ch(
     try:
         from sqlalchemy import text
         
-        # Check if repository exists using raw SQL
         check_query = text("""
             SELECT repository_full_name
             FROM repo_sync_events
@@ -362,7 +346,6 @@ async def update_repository_status_ch(
             {"repo_full_name": repo_full_name, "installation_id": installation_id}
         ).first()
         
-        # For ClickHouse, we always INSERT (MergeTree handles deduplication based on order_by)
         insert_query = text("""
             INSERT INTO repo_sync_events (
                 repository_full_name,
@@ -471,7 +454,7 @@ async def get_repository_status_ch(
         logger.error(f"Error getting repository status from ClickHouse: {e}")
         import traceback
         traceback.print_exc()
-        raise  # Re-raise to see where it's actually being caught    
+        raise
 
 def debug_table_schema(session):
     from sqlalchemy import text
@@ -526,7 +509,6 @@ async def backfill_repository_ch(
     
     logger.info(f"Starting ClickHouse backfill for {source_lower} repository: {repo_full_name}")
     
-    # Update repository status to BACKFILLING
     await update_repository_status_ch(
         session,
         repo_full_name,
@@ -540,39 +522,31 @@ async def backfill_repository_ch(
     )
     
     try:
-        # Import here to avoid circular dependencies
         from services.clickhouse_service.ch_commit_processor import process_commit_from_webhook, process_bitbucket_commit_from_webhook
         
-        # Fetch commits based on source
         if source_lower == "github":
             if not app_id or not private_key_pem:
                 raise ValueError("app_id and private_key_pem are required for GitHub backfill")
             
             from services.git_diff import get_installation_token
-            # from services.backfill import fetch_repository_commits
             
-            # Get installation token for GitHub API
             installation_token = await get_installation_token(
                 app_id=app_id,
                 private_key_pem=private_key_pem,
                 installation_id=installation_id,
             )
             
-            # Fetch commits (limit to max_commits)
             commits_data = await fetch_repository_commits(
                 repo_full_name=repo_full_name,
                 installation_token=installation_token,
                 max_commits=max_commits,
             )
             
-        else:  # bitbucket
+        else:
             from services.auth.bitbucket_oauth import get_access_token
-            # from services.backfill import fetch_bitbucket_repository_commits
             
-            # Get Bitbucket OAuth token
             access_token = await get_access_token()
             
-            # Fetch commits (limit to max_commits)
             commits_data = await fetch_bitbucket_repository_commits(
                 repo_full_name=repo_full_name,
                 access_token=access_token,
@@ -599,7 +573,6 @@ async def backfill_repository_ch(
                 "skipped_commits": 0,
             }
         
-        # Process commits in batches to avoid overwhelming the system
         batch_size = 10
         processed_count = 0
         skipped_count = 0
@@ -607,15 +580,11 @@ async def backfill_repository_ch(
         for i in range(0, len(commits_data), batch_size):
             batch = commits_data[i:i + batch_size]
             
-            # Process batch concurrently
             tasks = []
             for commit_data in batch:
                 if source_lower == "github":
-                    # Adapt GitHub API commit format to webhook format
-                    # GitHub API uses "sha" and nested "commit" object
-                    # Webhook format uses "id" and flat structure
                     webhook_format_commit = {
-                        "id": commit_data["sha"],  # Full commit hash
+                        "id": commit_data["sha"],
                         "message": commit_data.get("commit", {}).get("message", ""),
                         "timestamp": commit_data.get("commit", {}).get("author", {}).get("date", ""),
                         "author": {
@@ -634,11 +603,10 @@ async def backfill_repository_ch(
                             app_id=app_id,
                             private_key_pem=private_key_pem,
                             session=session,
-                            skip_existing=True,  # Idempotency: skip existing commits
+                            skip_existing=True,
                         )
                     )
-                else:  # bitbucket
-                    # Bitbucket API commit format is already compatible with process_bitbucket_commit_from_webhook
+                else:
                     tasks.append(
                         process_bitbucket_commit_from_webhook(
                             commit_data=commit_data,
@@ -647,7 +615,7 @@ async def backfill_repository_ch(
                             repo_url=repo_url,
                             workspace_id=installation_id,
                             session=session,
-                            skip_existing=True,  # Idempotency: skip existing commits
+                            skip_existing=True,
                         )
                     )
             
@@ -662,15 +630,13 @@ async def backfill_repository_ch(
                 else:
                     processed_count += 1
             
-            # Get commit hash for progress tracking (different field names for GitHub vs Bitbucket)
             last_commit_hash = ""
             if batch:
                 if source_lower == "github":
                     last_commit_hash = batch[0].get("sha", "")
-                else:  # bitbucket
+                else:
                     last_commit_hash = batch[0].get("hash", "")
             
-            # Update progress
             await update_repository_status_ch(
                 session,
                 repo_full_name,
@@ -689,11 +655,8 @@ async def backfill_repository_ch(
                 f"{processed_count} processed, {skipped_count} skipped"
             )
             
-            # Small delay between batches to respect rate limits
             await asyncio.sleep(1)
         
-        # Check current repository status - only update to LIVE if not already LIVE
-        # (LIVE status may be set when 20th commit is sent to Zep)
         repo_status = await get_repository_status_ch(
             session,
             repo_full_name,
@@ -701,7 +664,6 @@ async def backfill_repository_ch(
         )
         current_status = repo_status.get("sync_status") if repo_status else None
         
-        # Only update status if not already LIVE
         if current_status != SyncStatus.LIVE.value:
             await update_repository_status_ch(
                 session,
@@ -715,7 +677,6 @@ async def backfill_repository_ch(
                 },
             )
         else:
-            # Already LIVE, just update completion timestamp and count
             await update_repository_status_ch(
                 session,
                 repo_full_name,
@@ -744,7 +705,6 @@ async def backfill_repository_ch(
     except Exception as e:
         logger.error(f"Backfill failed for {source_lower} {repo_full_name}: {e}", exc_info=True)
         
-        # Update repository status to FAILED
         await update_repository_status_ch(
             session,
             repo_full_name,

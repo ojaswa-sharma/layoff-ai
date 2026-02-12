@@ -1,7 +1,7 @@
 from openai import AsyncOpenAI
 import os
 from models.commits import CommitDetails
-from services.zep_store import get_personalizer, botMessage
+from models.graphiti_input import botMessage
 from services.graphiti.graphiti_store import get_graphitit_personalizer
 import asyncio
 from dotenv import load_dotenv
@@ -18,7 +18,6 @@ _client = None
 def get_openai():
     global _client
     if _client is None:
-        # Support both OPENAI_KEY and OPENAI_API_KEY environment variables
         api_key = os.getenv("OPENAI_KEY") or os.getenv("OPENAI_API_KEY")
         if not api_key:
             raise ValueError(
@@ -180,11 +179,6 @@ async def summarize_and_upload(diff_text, name, mail, repo_name, commit_title, d
         if isinstance(commit_date, str):
             commit_date = datetime.fromisoformat(commit_date)
         diff = await summarie_diff(get_openai(), diff_text, name, mail, repo_name, commit_title)
-        # actual_diff = diff.copy()
-        # diff["mail"] = mail
-        # diff["repo_name"] = repo_name
-        # diff["commit_hash"] = commit_hash
-        # zep = get_personalizer()
         graphiti = get_graphitit_personalizer()
         msg = botMessage(role="norole", content=f"""
     Repository: {repo_name}
@@ -199,7 +193,6 @@ async def summarize_and_upload(diff_text, name, mail, repo_name, commit_title, d
     """)
         print(f"[DEBUG] Extraction successful, moving to db and zep")
         await graphiti.add_message(user_id = f"user_{mail}", message=msg, thread_id=repo_name, first_name=name, email=mail, repo_name=repo_name, date=commit_date)
-        # await run_in_threadpool(db.commit_summary.insert_one,diff)
         if not db:
             db = get_ch_session_direct()
             created_session = True

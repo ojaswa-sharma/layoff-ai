@@ -1,5 +1,4 @@
 from services.graphiti.init_client import get_graphiti
-# from models.zep_ontology import *
 from models.graphiti_ontology import *
 from graphiti_core.nodes import EpisodeType
 from graphiti_core.search.search_filters import SearchFilters
@@ -132,21 +131,22 @@ class Personalizer:
 
 
     async def get_user_persona(self, user_id):
-        try:
-            print(f"[DEBUG] Getting persona for user_id: {user_id}")
-            user_node = await self.zep_conn.user.get_node(user_id=user_id)
-            print(f"[DEBUG] User node response: {user_node}")
-            print(f"[DEBUG] User node type: {type(user_node)}")
+        return "TBD"
+        # try:
+        #     print(f"[DEBUG] Getting persona for user_id: {user_id}")
+        #     user_node = await self.zep_conn.user.get_node(user_id=user_id)
+        #     print(f"[DEBUG] User node response: {user_node}")
+        #     print(f"[DEBUG] User node type: {type(user_node)}")
             
-            if user_node and hasattr(user_node, 'node') and user_node.node:
-                print(f"[DEBUG] User node.node: {user_node.node}")
-                print(f"[DEBUG] User node.node.summary: {user_node.node.summary}")
-                return user_node.node.summary or ""
-            else:
-                print(f"[DEBUG] No valid node found in response")
-                return ""
-        except Exception as e:
-            print(f"[ERROR] Error getting user persona: {e}")
-            import traceback
-            traceback.print_exc()
-            return ""
+        #     if user_node and hasattr(user_node, 'node') and user_node.node:
+        #         print(f"[DEBUG] User node.node: {user_node.node}")
+        #         print(f"[DEBUG] User node.node.summary: {user_node.node.summary}")
+        #         return user_node.node.summary or ""
+        #     else:
+        #         print(f"[DEBUG] No valid node found in response")
+        #         return ""
+        # except Exception as e:
+        #     print(f"[ERROR] Error getting user persona: {e}")
+        #     import traceback
+        #     traceback.print_exc()
+        #     return ""

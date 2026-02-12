@@ -55,13 +55,11 @@ async def webhook_github(request: Request, session: Session = Depends(get_ch_ses
     - installation.deleted: Clean up repository tracking
     """
     try:
-        # Get GitHub event type from headers
         event_type = request.headers.get("X-GitHub-Event", "push")
         print(f"[EVENT] EVENT TYPE : {event_type}")
         
         request_data = await request.json()
         
-        # Handle installation events
         if event_type == "installation":
             action = request_data.get("action")
             
@@ -72,15 +70,12 @@ async def webhook_github(request: Request, session: Session = Depends(get_ch_ses
             else:
                 return {"message": f"Ignoring installation action: {action}"}
         
-        # Handle pull request events (PR merges)
         if event_type == "pull_request":
             return await handle_pull_request_event(request_data, session)
         
-        # Handle push events (existing functionality)
         if event_type == "push":
             return await handle_push_event(request_data, session)
         
-        # Ignore other event types
         return {
             "message": f"Event type '{event_type}' not processed",
             "event_type": event_type,
@@ -106,7 +101,6 @@ async def handle_pull_request_event(request_data: dict, session: Session):
     """
     action = request_data.get("action")
     
-    # Only process merged PRs
     if action != "closed":
         return {
             "message": f"PR action '{action}' not processed (only 'closed' with merged=true)",
@@ -134,7 +128,7 @@ async def handle_pull_request_event(request_data: dict, session: Session):
         repo_url=repo_url,
         installation_id=installation_id,
         session=session,
-        skip_existing=True,  # Idempotency: skip existing PR merges
+        skip_existing=True,
     )
     
     if result is None:
@@ -170,11 +164,7 @@ async def handle_push_event(request_data: dict, session: Session):
         repo_name = request_data["repository"]["name"]
         repo_url = request_data["repository"]["html_url"]
         
-        # Lazy backfill trigger: if repo doesn't exist or is not LIVE, trigger backfill
-        # This handles repositories installed before the installation.created feature existed
-        # Uses atomic update as a distributed lock to ensure only one backfill runs at a time
         
-        # Check current repository status
         repo_status = await get_repository_status_ch(
             session,
             repo_full_name,
@@ -183,11 +173,7 @@ async def handle_push_event(request_data: dict, session: Session):
         
         current_status = repo_status.get("sync_status") if repo_status else None
         
-        # Trigger backfill if repository doesn't exist or is not LIVE
-        # Skip if already BACKFILLING (another process is handling it)
         if current_status != SyncStatus.LIVE.value and current_status != SyncStatus.BACKFILLING.value:
-            # Try to set status to BACKFILLING (acts as distributed lock)
-            # For ClickHouse, we check and update atomically
             if not repo_status or repo_status.get("sync_status") != SyncStatus.BACKFILLING.value:
                 success = await update_repository_status_ch(
                     session,
@@ -201,16 +187,13 @@ async def handle_push_event(request_data: dict, session: Session):
                     },
                 )
                 
-                # If update succeeded, trigger backfill
                 if success:
                     logger.info(
                         f"Lazy backfill triggered for {repo_full_name} "
                         f"(installation {installation_id}) - previous status: {current_status or 'missing'}"
                     )
                     
-                    # Trigger backfill asynchronously (create new session for async task)
                     async def run_backfill():
-                        # ch_session = SessionLocal()
                         ch_session = get_ch_session_direct()
 
                         try:
@@ -222,7 +205,7 @@ async def handle_push_event(request_data: dict, session: Session):
                                 app_id=app_id,
                                 private_key_pem=pem_data,
                                 session=ch_session,
-                                max_commits=BACKFILL_MAX_COMMITS,  # Hardcoded limit as requested
+                                max_commits=BACKFILL_MAX_COMMITS,
                             )
                         except Exception as e:
                             logger.error(f"Error in async backfill for {repo_full_name}: {e}", exc_info=True)
@@ -231,18 +214,15 @@ async def handle_push_event(request_data: dict, session: Session):
                     
                     asyncio.create_task(run_backfill())
             else:
-                # Another process is already backfilling (race condition handled)
                 logger.debug(
                     f"Backfill already in progress for {repo_full_name}, skipping trigger"
                 )
         elif current_status == SyncStatus.BACKFILLING.value:
-            # Backfill already in progress
             logger.debug(
                 f"Received webhook for {repo_full_name} while backfill in progress. "
                 "Processing commit anyway (idempotency will prevent duplicates)."
             )
         
-        # Process commits using shared processor (always, regardless of backfill status)
         processed_count = 0
         skipped_count = 0
         
@@ -256,7 +236,7 @@ async def handle_push_event(request_data: dict, session: Session):
                 app_id=app_id,
                 private_key_pem=pem_data,
                 session=session,
-                skip_existing=True,  # Idempotency: skip existing commits
+                skip_existing=True,
             )
             
             if result is None:
@@ -299,12 +279,10 @@ async def handle_installation_created(request_data: dict, session: Session):
             "installation_id": installation_id,
         }
     
-    # Record repositories and trigger backfill
     for repo in repositories:
         repo_full_name = repo["full_name"]
         repo_name = repo["name"]
         
-        # Create repository record in ClickHouse
         await update_repository_status_ch(
             session,
             repo_full_name,
@@ -316,8 +294,6 @@ async def handle_installation_created(request_data: dict, session: Session):
             },
         )
         
-        # Trigger backfill asynchronously (create new session for async task)
-        # Capture loop variables to avoid closure issues
         repo_url_value = repo.get("html_url", f"https://github.com/{repo_full_name}")
         async def run_backfill(rf_name: str, r_name: str, r_url: str):
             ch_session = SessionLocal()
@@ -360,7 +336,6 @@ async def handle_installation_deleted(request_data: dict, session: Session):
     """
     installation_id = request_data["installation"]["id"]
     
-    # Update all repositories for this installation in ClickHouse
     from models.ch_models import RepoSyncEventCH
     
     repos = session.query(RepoSyncEventCH).filter(

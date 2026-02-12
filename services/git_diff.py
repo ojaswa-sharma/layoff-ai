@@ -72,7 +72,6 @@ def count_diff_stats(diff_text: str) -> dict:
         if not line:
             continue
 
-        # skip diff metadata
         if (
             line.startswith("+++")
             or line.startswith("---")
@@ -108,7 +107,6 @@ async def fetch_bitbucket_diff(
     """
     token = await get_access_token()
     
-    # Bitbucket diff endpoint format: /2.0/repositories/{workspace}/{repo}/diff/{spec}
     diff_url = f"{BITBUCKET_API}/repositories/{repo_full_name}/diff/{commit_hash}"
     
     headers = {
