@@ -45,7 +45,7 @@ async def fetch_github_repository_languages(
         headers = {
             "Authorization": f"token {installation_token}",
             "Accept": "application/vnd.github.v3+json",
-            "User-Agent": "layoff-ai",
+            "User-Agent": "house-of-apps-ai-engineering-manager",
         }
         
         async with aiohttp.ClientSession() as session:
@@ -98,7 +98,7 @@ async def fetch_github_repository_topics(
         headers = {
             "Authorization": f"token {installation_token}",
             "Accept": "application/vnd.github.mercy-preview+json",  # Includes topics
-            "User-Agent": "layoff-ai",
+            "User-Agent": "house-of-apps-ai-engineering-manager",
         }
         
         async with aiohttp.ClientSession() as session:
