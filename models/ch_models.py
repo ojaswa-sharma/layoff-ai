@@ -9,8 +9,9 @@ from sqlalchemy.orm import column_property
 from dependencies.ch_db import Base
 from sqlalchemy.sql import literal_column
 from clickhouse_sqlalchemy import engines
-from clickhouse_sqlalchemy.types import LowCardinality, String, AggregateFunction, UInt64, Int64
+from clickhouse_sqlalchemy.types import LowCardinality, String, AggregateFunction, UInt64, Int64, Enum8
 from datetime import datetime, timezone
+import enum
 
 
 class CommitCH(Base):
@@ -133,7 +134,7 @@ class CommitAnalysisCH(Base):
 
     __table_args__ = (
         engines.MergeTree(
-            order_by=("email", "repo_name"),
+            order_by=("email", "repo_name", "commit_hash"),
             partition_by=("email")
         ),
     )
@@ -250,6 +251,25 @@ class UserRepoAggregate(Base):
     last_commit_date = Column(
         AggregateFunction("max", DateTime)
     )
+
+class DimensionTypeEnum(enum.Enum):
+    department = 1
+    work_type = 2
+    work_category = 3
+
+class UserStatsAggregate(Base):
+    __tablename__ = "user_stats_agg"
+
+    __table_args__ = (
+        engines.AggregatingMergeTree(
+            order_by=("email", "dimension_type", "dimension_value")
+        ),
+    )
+
+    email = Column(LowCardinality(String), primary_key=True)
+    dimension_type = Column(Enum8(DimensionTypeEnum))
+    dimension_value = Column(String)
+    cnt_state = Column(AggregateFunction("count"))
 
 
 class RepositoryTechStackCH(Base):

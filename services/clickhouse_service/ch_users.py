@@ -292,128 +292,103 @@ async def get_developer_ch(
         offset = (page - 1) * limit
         project_param = project or ""
 
-        sql = text(f"""
-        WITH
-            :email_param AS email_param,
-            :project_param AS project_param
-
-        SELECT
-            ch.commit_hash AS commit_hash,
-            ch.message AS commit_title,
-            ch.date AS commit_date,
-            ch.repository_name AS repository_name,
-            ch.changes AS changes,
-
-            ca.department AS department,
-            ca.work_type AS work_type,
-            ca.work_category AS work_category,
-            ca.commiters_performance AS performance,
-            ca.commit_summary AS commit_summary,
-
-            totals.total_commits AS total_commits,
-            stats.departments AS departments,
-            stats.work_types AS work_types,
-            stats.work_categories AS work_categories,
-            projects.projects AS projects
-
-        FROM
-        (
-            SELECT 
-                commit_hash,
-                message,
-                date,
-                repository_name,
-                changes
-            FROM commits
-            WHERE email = email_param
-              AND (project_param = '' OR repository_name = project_param)
-            ORDER BY date DESC
+        commits_sql = text(f"""
+            SELECT
+                c.commit_hash,
+                c.message AS commit_title,
+                c.date AS commit_date,
+                c.repository_name,
+                c.changes,
+                ca.department,
+                ca.work_type,
+                ca.work_category,
+                ca.commiters_performance AS performance,
+                ca.commit_summary
+            FROM commits c
+            LEFT JOIN commit_analysis ca
+                ON c.commit_hash = ca.commit_hash
+               AND ca.email = :email
+            WHERE c.email = :email
+              AND (:project = '' OR c.repository_name = :project)
+            ORDER BY c.date DESC
             LIMIT {limit} OFFSET {offset}
-        ) AS ch
-
-        LEFT JOIN commit_analysis AS ca
-            ON ch.commit_hash = ca.commit_hash
-           AND ca.email = email_param
-
-        CROSS JOIN
-        (
-            SELECT count() AS total_commits
-            FROM commits
-            WHERE email = email_param
-              AND (project_param = '' OR repository_name = project_param)
-        ) AS totals
-
-        CROSS JOIN
-        (
-            SELECT
-                groupArray((department, dept_count)) AS departments,
-                groupArray((work_type, wt_count)) AS work_types,
-                groupArray((work_category, wc_count)) AS work_categories
-            FROM
-            (
-                SELECT department, count() AS dept_count,
-                       NULL AS work_type, NULL AS wt_count,
-                       NULL AS work_category, NULL AS wc_count
-                FROM commit_analysis
-                WHERE email = email_param
-                GROUP BY department
-
-                UNION ALL
-
-                SELECT NULL, NULL,
-                       work_type, count(),
-                       NULL, NULL
-                FROM commit_analysis
-                WHERE email = email_param
-                GROUP BY work_type
-
-                UNION ALL
-
-                SELECT NULL, NULL,
-                       NULL, NULL,
-                       work_category, count()
-                FROM commit_analysis
-                WHERE email = email_param
-                GROUP BY work_category
-            )
-        ) AS stats
-
-        CROSS JOIN
-        (
-            SELECT
-                groupArray(
-                    (
-                        repo_name,
-                        commit_count,
-                        last_commit
-                    )
-                ) AS projects
-            FROM
-            (
-                SELECT
-                    repo_name,
-                    countMerge(commit_count) AS commit_count,
-                    maxMerge(last_commit_date) AS last_commit
-                FROM user_repo_agg
-                WHERE email = email_param
-                  AND (project_param = '' OR repo_name = project_param)
-                GROUP BY repo_name
-                ORDER BY last_commit DESC
-            )
-        ) AS projects
         """)
 
-        result = session.execute(
-            sql,
+        commit_rows = session.execute(
+            commits_sql,
             {
-                "email_param": email,
-                "project_param": project_param,
+                "email": email,
+                "project": project_param,
                 "limit": limit,
                 "offset": offset,
             },
         ).fetchall()
 
-        if not result:
+        stats_sql = text("""
+            SELECT
+                (SELECT count() FROM commit_analysis WHERE email = :email) AS total_commits,
+
+                (
+                    SELECT groupArray((department, cnt))
+                    FROM
+                    (
+                        SELECT department, count() AS cnt
+                        FROM commit_analysis
+                        WHERE email = :email
+                        GROUP BY department
+                    )
+                ) AS departments,
+
+                (
+                    SELECT groupArray((work_type, cnt))
+                    FROM
+                    (
+                        SELECT work_type, count() AS cnt
+                        FROM commit_analysis
+                        WHERE email = :email
+                        GROUP BY work_type
+                    )
+                ) AS work_types,
+
+                (
+                    SELECT groupArray((work_category, cnt))
+                    FROM
+                    (
+                        SELECT work_category, count() AS cnt
+                        FROM commit_analysis
+                        WHERE email = :email
+                        GROUP BY work_category
+                    )
+                ) AS work_categories
+        """)
+
+        stats_row = session.execute(
+            stats_sql,
+            {"email": email},
+        ).fetchone()
+
+        projects_sql = text("""
+            SELECT
+                repo_name,
+                countMerge(commit_count) AS commit_count,
+                maxMerge(last_commit_date) AS last_commit
+            FROM user_repo_agg
+            WHERE email = :email
+              AND (:project = '' OR repo_name = :project)
+            GROUP BY repo_name
+            ORDER BY last_commit DESC
+        """)
+
+        project_rows = session.execute(
+            projects_sql,
+            {"email": email, "project": project_param},
+        ).fetchall()
+
+        # ----------------------------
+        # Response Building
+        # ----------------------------
+
+        if not commit_rows:
             return {
                 "projects": [],
                 "stats": {
@@ -426,28 +401,35 @@ async def get_developer_ch(
                 "commit_history": [],
             }
 
-        first_row = result[0]._mapping
-
         # ---- Stats ----
-        departments = {k: v for k, v in (first_row["departments"] or []) if k}
-        work_types = {k: v for k, v in (first_row["work_types"] or []) if k}
-        real_vs_fake = {k: v for k, v in (first_row["work_categories"] or []) if k}
+        if stats_row:
+            s = stats_row._mapping
+            departments = {k: v for k, v in (s["departments"] or []) if k}
+            work_types = {k: v for k, v in (s["work_types"] or []) if k}
+            real_vs_fake = {k: v for k, v in (s["work_categories"] or []) if k}
+            total_commits = s["total_commits"]
+        else:
+            departments = {}
+            work_types = {}
+            real_vs_fake = {}
+            total_commits = 0
 
         # ---- Projects ----
-        projects_list = []
-        for repo_name, count, last_commit in first_row["projects"] or []:
-            projects_list.append({
-                "repository_name": repo_name,
-                "commit_count": count,
+        projects_list = [
+            {
+                "repository_name": r.repo_name,
+                "commit_count": r.commit_count,
                 "last_commit": (
-                    make_aware(last_commit).isoformat()
-                    if last_commit else None
+                    make_aware(r.last_commit).isoformat()
+                    if r.last_commit else None
                 ),
-            })
+            }
+            for r in project_rows
+        ]
 
         # ---- Commit history ----
         commit_history = []
-        for row in result:
+        for row in commit_rows:
             r = row._mapping
             changes = _parse_changes_json(r["changes"])
 
@@ -474,7 +456,7 @@ async def get_developer_ch(
                 "departments": departments,
                 "work_types": work_types,
                 "real_vs_fake": real_vs_fake,
-                "total_commits": first_row["total_commits"],
+                "total_commits": total_commits,
             },
             "pagination": {"page": page, "limit": limit},
             "commit_history": commit_history,

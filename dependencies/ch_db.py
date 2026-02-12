@@ -44,7 +44,7 @@ def add_materialized_change_columns(engine):
             if exists == 0:
                 conn.execute(text("""
                     CREATE MATERIALIZED VIEW user_repo_agg_mv
-                    TO user_repo_agg
+                    TO user_stats_agg
                     AS
                     SELECT
                         email,
@@ -56,6 +56,49 @@ def add_materialized_change_columns(engine):
                         maxState(date) AS last_commit_date
                     FROM commits
                     GROUP BY email, repo_name
+                """))
+            stats_exists = conn.execute(text("""
+                SELECT count(*) 
+                FROM system.tables 
+                WHERE database = 'default' AND name = 'mv_user_stats'
+            """))
+            stats_exists = stats_exists.fetchone()[0]
+            if stats_exists == 0:
+                conn.execute(text("""
+            CREATE MATERIALIZED VIEW default.mv_user_stats
+            TO default.user_stats_agg
+            AS
+
+            SELECT
+                email,
+                'department' AS dimension_type,
+                department AS dimension_value,
+                countState() AS cnt_state
+            FROM commit_analysis
+            WHERE department != ''
+            GROUP BY email, department
+
+            UNION ALL
+
+            SELECT
+                email,
+                'work_type',
+                work_type,
+                countState()
+            FROM commit_analysis
+            WHERE work_type != ''
+            GROUP BY email, work_type
+
+            UNION ALL
+
+            SELECT
+                email,
+                'work_category',
+                work_category,
+                countState()
+            FROM commit_analysis
+            WHERE work_category != ''
+            GROUP BY email, work_category;
                 """))
 
         logger.info("Materialized columns and view ensured successfully")
