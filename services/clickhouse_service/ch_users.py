@@ -281,104 +281,139 @@ def make_aware(dt):
     return dt
 
 async def get_developer_ch(
-    session: Session,
+    session,
     email: str,
     project: Optional[str] = None,
     page: int = 1,
     limit: int = 10,
 ) -> Dict[str, Any]:
-    """
-    Get developer details with commit history and statistics using a single query.
-    
-    Args:
-        session: SQLAlchemy session
-        email: Developer email
-        project: Optional project/repository name filter
-        page: Page number for pagination
-        limit: Number of commits per page
-        
-    Returns:
-        Dictionary with developer data, projects, stats, and commit history
-    """
+
     try:
-        skip = (page - 1) * limit
-        
-        filters = [CommitCH.email == email]
-        if project:
-            filters.append(CommitCH.repository_name == project)
-        
-        query = (
-            select(
-                CommitCH.commit_hash.label("commit_hash"),
-                CommitCH.message.label("commit_title"),
-                CommitCH.date.label("date"),
-                CommitCH.repository_name.label("repository_name"),
-                CommitCH.changes.label("changes"),
+        offset = (page - 1) * limit
+        project_param = project or ""
 
-                CommitAnalysisCH.department.label("department"),
-                CommitAnalysisCH.work_type.label("work_type"),
-                CommitAnalysisCH.work_category.label("work_category"),
-                CommitAnalysisCH.commiters_performance.label("performance"),
-                CommitAnalysisCH.commit_summary.label("commit_summary"),
+        sql = text(f"""
+        WITH
+            :email_param AS email_param,
+            :project_param AS project_param
 
-                func.row_number().over(order_by=CommitCH.date.desc()).label("row_num"),
-                func.count().over().label("total_commits"),
+        SELECT
+            ch.commit_hash AS commit_hash,
+            ch.message AS commit_title,
+            ch.date AS commit_date,
+            ch.repository_name AS repository_name,
+            ch.changes AS changes,
 
-                func.groupUniqArray(CommitCH.repository_name).over().label("all_projects"),
+            ca.department AS department,
+            ca.work_type AS work_type,
+            ca.work_category AS work_category,
+            ca.commiters_performance AS performance,
+            ca.commit_summary AS commit_summary,
 
-                func.groupArray(
-                    func.tuple(
-                        CommitCH.repository_name,
-                        CommitCH.date,
-                        CommitCH.commit_hash
-                    )
-                ).over().label("project_data"),
+            totals.total_commits AS total_commits,
+            stats.departments AS departments,
+            stats.work_types AS work_types,
+            stats.work_categories AS work_categories,
+            projects.projects AS projects
 
-                func.groupArray(
-                    case(
-                        (
-                            CommitAnalysisCH.department.isnot(None)
-                            & (CommitAnalysisCH.department != ''),
-                            CommitAnalysisCH.department
-                        ),
-                        else_=None
-                    )
-                ).over().label("all_departments"),
+        FROM
+        (
+            SELECT 
+                commit_hash,
+                message,
+                date,
+                repository_name,
+                changes
+            FROM commits
+            WHERE email = email_param
+              AND (project_param = '' OR repository_name = project_param)
+            ORDER BY date DESC
+            LIMIT {limit} OFFSET {offset}
+        ) AS ch
 
-                func.groupArray(
-                    case(
-                        (
-                            CommitAnalysisCH.work_type.isnot(None)
-                            & (CommitAnalysisCH.work_type != ''),
-                            CommitAnalysisCH.work_type
-                        ),
-                        else_=None
-                    )
-                ).over().label("all_work_types"),
+        LEFT JOIN commit_analysis AS ca
+            ON ch.commit_hash = ca.commit_hash
+           AND ca.email = email_param
 
-                func.groupArray(
-                    case(
-                        (
-                            CommitAnalysisCH.work_category.isnot(None)
-                            & (CommitAnalysisCH.work_category != ''),
-                            CommitAnalysisCH.work_category
-                        ),
-                        else_=None
-                    )
-                ).over().label("all_work_categories"),
+        CROSS JOIN
+        (
+            SELECT count() AS total_commits
+            FROM commits
+            WHERE email = email_param
+              AND (project_param = '' OR repository_name = project_param)
+        ) AS totals
+
+        CROSS JOIN
+        (
+            SELECT
+                groupArray((department, dept_count)) AS departments,
+                groupArray((work_type, wt_count)) AS work_types,
+                groupArray((work_category, wc_count)) AS work_categories
+            FROM
+            (
+                SELECT department, count() AS dept_count,
+                       NULL AS work_type, NULL AS wt_count,
+                       NULL AS work_category, NULL AS wc_count
+                FROM commit_analysis
+                WHERE email = email_param
+                GROUP BY department
+
+                UNION ALL
+
+                SELECT NULL, NULL,
+                       work_type, count(),
+                       NULL, NULL
+                FROM commit_analysis
+                WHERE email = email_param
+                GROUP BY work_type
+
+                UNION ALL
+
+                SELECT NULL, NULL,
+                       NULL, NULL,
+                       work_category, count()
+                FROM commit_analysis
+                WHERE email = email_param
+                GROUP BY work_category
             )
-            .select_from(CommitCH)
-            .outerjoin(
-                CommitAnalysisCH,
-                CommitCH.commit_hash == CommitAnalysisCH.commit_hash,
+        ) AS stats
+
+        CROSS JOIN
+        (
+            SELECT
+                groupArray(
+                    (
+                        repo_name,
+                        commit_count,
+                        last_commit
+                    )
+                ) AS projects
+            FROM
+            (
+                SELECT
+                    repo_name,
+                    countMerge(commit_count) AS commit_count,
+                    maxMerge(last_commit_date) AS last_commit
+                FROM user_repo_agg
+                WHERE email = email_param
+                  AND (project_param = '' OR repo_name = project_param)
+                GROUP BY repo_name
+                ORDER BY last_commit DESC
             )
-            .where(*filters)
-            .order_by(CommitCH.date.desc())
-        )
-        
-        all_results = session.execute(query).fetchall()
-        
-        if not all_results:
+        ) AS projects
+        """)
+
+        result = session.execute(
+            sql,
+            {
+                "email_param": email,
+                "project_param": project_param,
+                "limit": limit,
+                "offset": offset,
+            },
+        ).fetchall()
+
+        if not result:
             return {
                 "projects": [],
                 "stats": {
@@ -387,91 +422,64 @@ async def get_developer_ch(
                     "real_vs_fake": {},
                     "total_commits": 0,
                 },
-                "pagination": {
-                    "page": page,
-                    "limit": limit,
-                },
+                "pagination": {"page": page, "limit": limit},
                 "commit_history": [],
             }
-        
-        first_row = all_results[0]
-        total_commits = first_row.total_commits
-        
-        departments = {}
-        for dept in first_row.all_departments:
-            if dept:
-                departments[dept] = departments.get(dept, 0) + 1
-        
-        work_types = {}
-        for wt in first_row.all_work_types:
-            if wt:
-                work_types[wt] = work_types.get(wt, 0) + 1
-        
-        real_vs_fake = {}
-        for cat in first_row.all_work_categories:
-            if cat:
-                real_vs_fake[cat] = real_vs_fake.get(cat, 0) + 1
-        
-        projects_map = {}
-        for repo_name, commit_date, commit_hash in first_row.project_data:
-            if repo_name not in projects_map:
-                projects_map[repo_name] = {
-                    'last_commit': commit_date,
-                    'count': 0
-                }
-            projects_map[repo_name]['count'] += 1
-            if commit_date > projects_map[repo_name]['last_commit']:
-                projects_map[repo_name]['last_commit'] = commit_date
-        
-        projects = [
-            {
+
+        first_row = result[0]._mapping
+
+        # ---- Stats ----
+        departments = {k: v for k, v in (first_row["departments"] or []) if k}
+        work_types = {k: v for k, v in (first_row["work_types"] or []) if k}
+        real_vs_fake = {k: v for k, v in (first_row["work_categories"] or []) if k}
+
+        # ---- Projects ----
+        projects_list = []
+        for repo_name, count, last_commit in first_row["projects"] or []:
+            projects_list.append({
                 "repository_name": repo_name,
-                "commit_count": data['count'],
-                "last_commit": make_aware(data['last_commit']).isoformat() if data['last_commit'] else None,
-            }
-            for repo_name, data in sorted(
-                projects_map.items(),
-                key=lambda x: x[1]['last_commit'],
-                reverse=True
-            )
-        ]
-        
+                "commit_count": count,
+                "last_commit": (
+                    make_aware(last_commit).isoformat()
+                    if last_commit else None
+                ),
+            })
+
+        # ---- Commit history ----
         commit_history = []
-        for row in all_results:
-            if skip < row.row_num <= skip + limit:
-                changes = _parse_changes_json(row.changes)
-                
-                commit_history.append({
-                    "commit_hash": row.commit_hash,
-                    "commit_title": row.commit_title,
-                    "date": make_aware(row.date).isoformat() if row.date else None,
-                    "repository_name": row.repository_name,
-                    "department": row.department if row.department else None,
-                    "work_type": row.work_type if row.work_type else None,
-                    "work_category": row.work_category if row.work_category else None,
-                    "performance": row.performance if row.performance else None,
-                    "additions": changes["additions"],
-                    "deletions": changes["deletions"],
-                    "commit_summary": row.commit_summary if row.commit_summary else None,
-                })
-        
-        response = {
-            "projects": projects,
+        for row in result:
+            r = row._mapping
+            changes = _parse_changes_json(r["changes"])
+
+            commit_history.append({
+                "commit_hash": r["commit_hash"],
+                "commit_title": r["commit_title"],
+                "date": (
+                    make_aware(r["commit_date"]).isoformat()
+                    if r["commit_date"] else None
+                ),
+                "repository_name": r["repository_name"],
+                "department": r["department"],
+                "work_type": r["work_type"],
+                "work_category": r["work_category"],
+                "performance": r["performance"],
+                "additions": changes["additions"],
+                "deletions": changes["deletions"],
+                "commit_summary": r["commit_summary"],
+            })
+
+        return {
+            "projects": projects_list,
             "stats": {
                 "departments": departments,
                 "work_types": work_types,
                 "real_vs_fake": real_vs_fake,
-                "total_commits": total_commits,
+                "total_commits": first_row["total_commits"],
             },
-            "pagination": {
-                "page": page,
-                "limit": limit,
-            },
+            "pagination": {"page": page, "limit": limit},
             "commit_history": commit_history,
         }
-        
-        return response
-        
+
     except Exception as e:
         logger.error(f"Error getting developer data from ClickHouse: {e}")
         return {"error": "Failed to fetch developer data"}

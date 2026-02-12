@@ -67,12 +67,7 @@ async def get_developer(
     Get detailed developer information including commit history, statistics, and AI-generated insights.
     """
     try:
-        # personalizer = get_personalizer()
         personalizer = get_graphitit_personalizer()
-
-        # user_data = await personalizer.get_user_persona(
-        #     user_id=f"user_{email}"
-        # )
 
         project_data = None
         if project:
@@ -80,7 +75,6 @@ async def get_developer(
                 graph_id=f"{email}_{project}"
             )
 
-        # Get developer data from ClickHouse
         dev_data = await get_developer_ch(
             session=session,
             email=email,
