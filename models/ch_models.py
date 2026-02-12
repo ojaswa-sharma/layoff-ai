@@ -252,10 +252,6 @@ class UserRepoAggregate(Base):
         AggregateFunction("max", DateTime)
     )
 
-class DimensionTypeEnum(enum.Enum):
-    department = 1
-    work_type = 2
-    work_category = 3
 
 class UserStatsAggregate(Base):
     __tablename__ = "user_stats_agg"
@@ -267,7 +263,7 @@ class UserStatsAggregate(Base):
     )
 
     email = Column(LowCardinality(String), primary_key=True)
-    dimension_type = Column(Enum8(DimensionTypeEnum))
+    dimension_type = Column(String)
     dimension_value = Column(String)
     cnt_state = Column(AggregateFunction("count"))
 

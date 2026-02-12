@@ -71,7 +71,7 @@ AS
 
 SELECT
     email AS email,
-    CAST('department', 'Enum8(\'department\'=1, \'work_type\'=2, \'work_category\'=3)') AS dimension_type,
+    'department' AS dimension_type,
     department AS dimension_value,
     countState() AS cnt_state
 FROM commit_analysis
@@ -82,7 +82,7 @@ UNION ALL
 
 SELECT
     email AS email,
-    CAST('work_type', 'Enum8(\'department\'=1, \'work_type\'=2, \'work_category\'=3)') AS dimension_type,
+    'work_type' AS dimension_type,
     work_type AS dimension_value,
     countState() AS cnt_state
 FROM commit_analysis
@@ -93,7 +93,7 @@ UNION ALL
 
 SELECT
     email AS email,
-    CAST('work_category', 'Enum8(\'department\'=1, \'work_type\'=2, \'work_category\'=3)') AS dimension_type,
+    'work_category' AS dimension_type,
     work_category AS dimension_value,
     countState() AS cnt_state
 FROM commit_analysis
