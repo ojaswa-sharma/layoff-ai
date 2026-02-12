@@ -3,7 +3,6 @@ SQLAlchemy declarative models for ClickHouse tables.
 """
 
 import json
-import types
 from typing import Dict, Any
 from sqlalchemy import Column, Integer, DateTime, text, Computed
 from sqlalchemy.orm import column_property
@@ -264,13 +263,12 @@ class RepositoryTechStackCH(Base):
     )
 
     repository_full_name = Column(String, primary_key=True)
-    installation_id = Column(types.UInt64, primary_key=True)
+    installation_id = Column(UInt64, primary_key=True)
 
     repository_name = Column(String, nullable=False)
 
-    # Native ClickHouse types (NO JSON needed)
-    languages = Column(types.Map(types.String, types.UInt64), default={})
-    topics = Column(types.Array(types.String), default=[])
+    languages = Column(String, default={})
+    topics = Column(String, default=[])
 
     last_updated = Column(DateTime, nullable=False)
     source = Column(String, nullable=False)
