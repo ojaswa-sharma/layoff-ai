@@ -42,12 +42,6 @@ async def insert_or_update_tech_stack_ch(
             "source": source,
         }
 
-        print("==============================================")
-        print("==============================================")
-        print("tech_stack_dict: ", tech_stack_dict)
-        print("==============================================")
-        print("==============================================")
-
         tech_stack_ch = RepositoryTechStackCH.from_dict(tech_stack_dict)
 
         session.add(tech_stack_ch)

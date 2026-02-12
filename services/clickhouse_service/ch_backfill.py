@@ -456,10 +456,8 @@ def debug_table_schema(session):
     from sqlalchemy import text
     
     result = session.execute(text("DESCRIBE TABLE repo_sync_events"))
-    print("=== TABLE SCHEMA ===")
     for row in result:
         print(row)
-    print("===================")
 
 
 async def backfill_repository_ch(
