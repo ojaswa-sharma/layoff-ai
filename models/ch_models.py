@@ -133,6 +133,7 @@ class CommitAnalysisCH(Base):
     __table_args__ = (
         engines.MergeTree(
             order_by=("email", "repo_name"),
+            partition_by=("email")
         ),
     )
 
