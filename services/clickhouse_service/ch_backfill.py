@@ -443,7 +443,6 @@ async def get_repository_status_ch(
             "error_message": result[6],
             "event_time": result[7],
         }
-        print(f'[DEBUG] Returning result dict: {result_dict}')
         return result_dict
         
     except Exception as e:
