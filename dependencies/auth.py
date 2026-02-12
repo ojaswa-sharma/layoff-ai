@@ -1,5 +1,6 @@
 import httpx
 from fastapi import Header, HTTPException, status
+import aiohttp
 import logging
 from dotenv import load_dotenv
 import os
@@ -32,33 +33,38 @@ async def verify_auth_token(authorization: str = Header(None)):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid Authorization format. Expected: Bearer <token>",
         )
-
-    # Call internal auth API
+    status_code = 401
     try:
         async with httpx.AsyncClient(timeout=5) as client:
             resp = await client.get(
                 AUTH_SERVICE_URL,
                 headers={"Authorization": f"Bearer {token}"},
             )
+            status_code = resp.status_code
             resp.raise_for_status()
             data = resp.json()
     except httpx.HTTPStatusError as e:
         logger.error(f"Auth API rejected token: {e.response.text}")
+        if int(status_code) == 429:
+            raise HTTPException(
+                status_code = 429,
+                detail="RATE LIMIT EXCEEDED, PLEASE WAIT"
+            )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
+            detail=f"[ERROR] Error from core auth service : {e}",
         )
     except Exception as e:
         logger.exception("Auth service unreachable")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Auth service unavailable",
+            detail=f"[ERROR] Error from internal service : {e}",
         )
 
-    if data.get("status") != "success":
+    if status_code<200 or status_code>=300:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token validation failed",
+            detail="Token expired",
         )
 
     return {
