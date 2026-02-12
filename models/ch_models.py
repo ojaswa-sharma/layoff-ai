@@ -3,6 +3,7 @@ SQLAlchemy declarative models for ClickHouse tables.
 """
 
 import json
+import types
 from typing import Dict, Any
 from sqlalchemy import Column, Integer, DateTime, text, Computed
 from sqlalchemy.orm import column_property
@@ -10,6 +11,7 @@ from dependencies.ch_db import Base
 from sqlalchemy.sql import literal_column
 from clickhouse_sqlalchemy import engines
 from clickhouse_sqlalchemy.types import LowCardinality, String, AggregateFunction, UInt64, Int64
+from datetime import datetime, timezone
 
 
 class CommitCH(Base):
@@ -255,56 +257,43 @@ class RepositoryTechStackCH(Base):
     __tablename__ = "repository_tech_stack"
 
     __table_args__ = (
-        engines.MergeTree(
+        engines.ReplacingMergeTree(
+            "last_updated",
             order_by=("repository_full_name", "installation_id"),
         ),
     )
 
     repository_full_name = Column(String, primary_key=True)
-    installation_id = Column(Integer, primary_key=True)
+    installation_id = Column(types.UInt64, primary_key=True)
 
     repository_name = Column(String, nullable=False)
-    languages = Column(String, nullable=True)  # JSON string: {"Python": 12345, "JavaScript": 6789}
-    topics = Column(String, nullable=True)  # JSON array string: ["python", "fastapi"]
+
+    # Native ClickHouse types (NO JSON needed)
+    languages = Column(types.Map(types.String, types.UInt64), default={})
+    topics = Column(types.Array(types.String), default=[])
+
     last_updated = Column(DateTime, nullable=False)
-    source = Column(String, nullable=False)  # "github" or "bitbucket"
+    source = Column(String, nullable=False)
 
     def to_dict(self) -> Dict[str, Any]:
-        languages_dict = None
-        if self.languages:
-            try:
-                languages_dict = json.loads(self.languages)
-            except Exception:
-                languages_dict = {}
-        
-        topics_list = None
-        if self.topics:
-            try:
-                topics_list = json.loads(self.topics)
-            except Exception:
-                topics_list = []
-
         return {
             "repository_full_name": self.repository_full_name,
             "installation_id": self.installation_id,
             "repository_name": self.repository_name,
-            "languages": languages_dict,
-            "topics": topics_list,
+            "languages": self.languages or {},
+            "topics": self.topics or [],
             "last_updated": self.last_updated,
             "source": self.source,
         }
 
     @classmethod
-    def from_dict(cls, tech_stack_dict: Dict[str, Any], session=None):
-        languages_json = json.dumps(tech_stack_dict.get("languages", {})) if tech_stack_dict.get("languages") else None
-        topics_json = json.dumps(tech_stack_dict.get("topics", [])) if tech_stack_dict.get("topics") else None
-        
+    def from_dict(cls, data: Dict[str, Any]):
         return cls(
-            repository_full_name=tech_stack_dict.get("repository_full_name", ""),
-            installation_id=tech_stack_dict.get("installation_id", 0),
-            repository_name=tech_stack_dict.get("repository_name", ""),
-            languages=languages_json,
-            topics=topics_json,
-            last_updated=tech_stack_dict.get("last_updated"),
-            source=tech_stack_dict.get("source", "github"),
+            repository_full_name=data.get("repository_full_name") or "",
+            installation_id=data.get("installation_id") or 0,
+            repository_name=data.get("repository_name") or "",
+            languages=data.get("languages") or {},
+            topics=data.get("topics") or [],
+            last_updated=data.get("last_updated") or datetime.now(timezone.utc),
+            source=data.get("source") or "github",
         )
