@@ -44,7 +44,7 @@ def add_materialized_change_columns(engine):
             if exists == 0:
                 conn.execute(text("""
                     CREATE MATERIALIZED VIEW user_repo_agg_mv
-                    TO user_stats_agg
+                    TO user_repo_agg
                     AS
                     SELECT
                         email,
@@ -65,40 +65,40 @@ def add_materialized_change_columns(engine):
             stats_exists = stats_exists.fetchone()[0]
             if stats_exists == 0:
                 conn.execute(text("""
-            CREATE MATERIALIZED VIEW default.mv_user_stats
-            TO default.user_stats_agg
-            AS
+CREATE MATERIALIZED VIEW default.mv_user_stats
+TO default.user_stats_agg
+AS
 
-            SELECT
-                email,
-                'department' AS dimension_type,
-                department AS dimension_value,
-                countState() AS cnt_state
-            FROM commit_analysis
-            WHERE department != ''
-            GROUP BY email, department
+SELECT
+    email AS email,
+    CAST('department', 'Enum8(\'department\'=1, \'work_type\'=2, \'work_category\'=3)') AS dimension_type,
+    department AS dimension_value,
+    countState() AS cnt_state
+FROM commit_analysis
+WHERE department != ''
+GROUP BY email, department
 
-            UNION ALL
+UNION ALL
 
-            SELECT
-                email,
-                'work_type',
-                work_type,
-                countState()
-            FROM commit_analysis
-            WHERE work_type != ''
-            GROUP BY email, work_type
+SELECT
+    email AS email,
+    CAST('work_type', 'Enum8(\'department\'=1, \'work_type\'=2, \'work_category\'=3)') AS dimension_type,
+    work_type AS dimension_value,
+    countState() AS cnt_state
+FROM commit_analysis
+WHERE work_type != ''
+GROUP BY email, work_type
 
-            UNION ALL
+UNION ALL
 
-            SELECT
-                email,
-                'work_category',
-                work_category,
-                countState()
-            FROM commit_analysis
-            WHERE work_category != ''
-            GROUP BY email, work_category;
+SELECT
+    email AS email,
+    CAST('work_category', 'Enum8(\'department\'=1, \'work_type\'=2, \'work_category\'=3)') AS dimension_type,
+    work_category AS dimension_value,
+    countState() AS cnt_state
+FROM commit_analysis
+WHERE work_category != ''
+GROUP BY email, work_category;
                 """))
 
         logger.info("Materialized columns and view ensured successfully")
