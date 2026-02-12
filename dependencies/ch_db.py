@@ -69,17 +69,18 @@ CREATE MATERIALIZED VIEW default.mv_user_stats
 TO default.user_stats_agg
 AS
 SELECT
-    email,
+    ca.email,
     dimension_type,
     dimension_value,
     countState() AS cnt_state
-FROM commit_analysis
+FROM commit_analysis ca
+LEFT JOIN commits c ON ca.commit_hash = c.commit_hash
 ARRAY JOIN
-    ['department', 'work_type', 'work_category'] AS dimension_type,
-    [department, work_type, work_category]        AS dimension_value
+    ['department', 'work_type', 'work_category', 'commit_hour']                    AS dimension_type,
+    [ca.department, ca.work_type, ca.work_category, toString(toHour(c.date))]      AS dimension_value
 WHERE dimension_value != ''
-GROUP BY email, dimension_type, dimension_value;
-                """))
+GROUP BY ca.email, dimension_type, dimension_value;                
+        """))
 
         logger.info("Materialized columns and view ensured successfully")
     except Exception as e:

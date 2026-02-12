@@ -318,7 +318,8 @@ async def get_developer_ch(
             SELECT
                 groupUniqArrayIf((dimension_value, cnt), dimension_type = 'department')    AS departments,
                 groupUniqArrayIf((dimension_value, cnt), dimension_type = 'work_type')     AS work_types,
-                groupUniqArrayIf((dimension_value, cnt), dimension_type = 'work_category') AS real_vs_fake
+                groupUniqArrayIf((dimension_value, cnt), dimension_type = 'work_category') AS real_vs_fake,
+                groupUniqArrayIf((dimension_value, cnt), dimension_type = 'commit_hour')   AS commit_hours
             FROM (
                 SELECT
                     dimension_type,
@@ -356,17 +357,19 @@ async def get_developer_ch(
         if not commit_rows:
             return {
                 "projects":       [],
-                "stats":          {"departments": {}, "work_types": {}, "real_vs_fake": {}, "total_commits": 0},
+                "stats":          {"departments": {}, "work_types": {}, "real_vs_fake": {}, "commit_hours": {}, "total_commits": 0},
                 "pagination":     {"page": page, "limit": limit},
                 "commit_history": [],
+                "commits_per_project": {},
             }
 
         s = stats_row._mapping if stats_row else {}
         stats = {
             "total_commits": project_rows[0].total_commits if project_rows else 0,
-            "departments":   dict(s.get("departments", [])),
-            "work_types":    dict(s.get("work_types",  [])),
-            "real_vs_fake":  dict(s.get("real_vs_fake",[])),
+            "departments":   dict(s.get("departments",  [])),
+            "work_types":    dict(s.get("work_types",   [])),
+            "real_vs_fake":  dict(s.get("real_vs_fake", [])),
+            "commit_hours":  dict(s.get("commit_hours", [])),
         }
 
         projects_list = [
@@ -377,6 +380,8 @@ async def get_developer_ch(
             }
             for r in project_rows
         ]
+
+        commits_per_project = {r.repo_name: r.commit_count for r in project_rows}
 
         commit_history = [
             {
@@ -396,10 +401,11 @@ async def get_developer_ch(
         ]
 
         return {
-            "projects":       projects_list,
-            "stats":          stats,
-            "pagination":     {"page": page, "limit": limit},
-            "commit_history": commit_history,
+            "projects":            projects_list,
+            "stats":               stats,
+            "pagination":          {"page": page, "limit": limit},
+            "commit_history":      commit_history,
+            "commits_per_project": commits_per_project,
         }
 
     except Exception as e:
