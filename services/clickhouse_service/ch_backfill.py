@@ -9,6 +9,7 @@ import asyncio
 import aiohttp
 from typing import List, Optional, Dict, Any
 from datetime import datetime
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from models.commits import Commit, SyncStatus
 from models.ch_models import CommitCH
@@ -403,7 +404,6 @@ async def get_repository_status_ch(
     """
     Get repository status from ClickHouse using SQLAlchemy ORM.
     """
-    from sqlalchemy import text
     
     try:
         query = text("""
@@ -422,20 +422,17 @@ async def get_repository_status_ch(
             LIMIT 1
         """)
         
-        print(f'[DEBUG] About to execute query for {repo_full_name}, {installation_id}')
         
         result = session.execute(
             query,
             {"repo_full_name": repo_full_name, "installation_id": installation_id}
         ).first()
         
-        print(f'[DEBUG] Query executed successfully. Result: {result}')
         
         if not result:
             print(f'[DEBUG] No result found, returning None')
             return None
         
-        print(f'[DEBUG] Building dict from result')
         result_dict = {
             "repository_full_name": result[0],
             "installation_id": result[1],
