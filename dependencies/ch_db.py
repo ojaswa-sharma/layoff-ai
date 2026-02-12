@@ -68,37 +68,17 @@ def add_materialized_change_columns(engine):
 CREATE MATERIALIZED VIEW default.mv_user_stats
 TO default.user_stats_agg
 AS
-
 SELECT
-    email AS email,
-    'department' AS dimension_type,
-    department AS dimension_value,
+    email,
+    dimension_type,
+    dimension_value,
     countState() AS cnt_state
 FROM commit_analysis
-WHERE department != ''
-GROUP BY email, department
-
-UNION ALL
-
-SELECT
-    email AS email,
-    'work_type' AS dimension_type,
-    work_type AS dimension_value,
-    countState() AS cnt_state
-FROM commit_analysis
-WHERE work_type != ''
-GROUP BY email, work_type
-
-UNION ALL
-
-SELECT
-    email AS email,
-    'work_category' AS dimension_type,
-    work_category AS dimension_value,
-    countState() AS cnt_state
-FROM commit_analysis
-WHERE work_category != ''
-GROUP BY email, work_category;
+ARRAY JOIN
+    ['department', 'work_type', 'work_category'] AS dimension_type,
+    [department, work_type, work_category]        AS dimension_value
+WHERE dimension_value != ''
+GROUP BY email, dimension_type, dimension_value;
                 """))
 
         logger.info("Materialized columns and view ensured successfully")
