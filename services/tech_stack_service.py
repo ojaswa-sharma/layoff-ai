@@ -174,3 +174,7 @@ async def fetch_github_tech_stack(
             "source": "github",
         }
 
+
+def test_func():
+    ...
+
