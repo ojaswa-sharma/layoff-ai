@@ -13,6 +13,8 @@ from models.commits import SyncStatus
 from services.clickhouse_service.ch_commit_processor import process_bitbucket_commit_from_webhook
 from services.clickhouse_service.ch_pr_merge_processor import process_bitbucket_pr_merge
 from services.clickhouse_service.ch_backfill import get_repository_status_ch, update_repository_status_ch
+from services.tech_stack_service import fetch_bitbucket_tech_stack
+from services.clickhouse_service.ch_tech_stack import insert_or_update_tech_stack_ch
 from dependencies.ch_db import get_ch_session, SessionLocal, get_ch_db, get_ch_session_direct
 import logging
 from datetime import datetime
@@ -241,6 +243,28 @@ async def handle_push_event(request_data: dict, session: Session):
                     skipped_count += 1
                 else:
                     processed_count += 1
+        
+        try:
+            tech_stack_data = await fetch_bitbucket_tech_stack(
+                repo_full_name=repo_full_name,
+            )
+            
+            if tech_stack_data:
+                try:
+                    await insert_or_update_tech_stack_ch(
+                        session=session,
+                        repository_full_name=repo_full_name,
+                        repository_name=repo_name,
+                        installation_id=workspace_id,
+                        languages=tech_stack_data.get("languages"),
+                        topics=[],
+                        source=tech_stack_data.get("source", "bitbucket"),
+                    )
+                    logger.info(f"Tech stack updated for {repo_full_name}")
+                except Exception as e:
+                    logger.error(f"Something went wrong while inserting tech stack for {repo_full_name}: {e}", exc_info=True)
+        except Exception as e:
+            logger.warning(f"Failed to fetch/update tech stack for {repo_full_name}: {e}", exc_info=True)
 
         return {
             "message": "Webhook processed successfully",

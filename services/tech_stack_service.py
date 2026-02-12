@@ -1,15 +1,19 @@
 """
-Service for fetching tech stack information from GitHub repositories.
+Service for fetching tech stack information from GitHub and Bitbucket repositories.
 
 This module provides functions to fetch language statistics and topics
-from GitHub repositories using the GitHub API.
+from GitHub repositories and language statistics from Bitbucket repositories
+using their respective APIs.
 """
 import logging
 import aiohttp
 from typing import Dict, Any
 from services.git_diff import get_installation_token, GITHUB_API
+from services.auth.bitbucket_oauth import get_access_token
 
 logger = logging.getLogger(__name__)
+
+BITBUCKET_API = "https://api.bitbucket.org/2.0"
 
 
 async def fetch_github_repository_languages(
@@ -175,3 +179,108 @@ async def fetch_github_tech_stack(
         }
 
 
+
+async def fetch_bitbucket_repository_languages(
+    workspace: str,
+    repo_slug: str,
+    access_token: str,
+) -> Dict[str, int]:
+    """
+    Fetch language statistics for a Bitbucket repository.
+    
+    Bitbucket API endpoint: GET /repositories/{workspace}/{repo_slug}/languages
+    Returns a dictionary mapping language names to bytes of code.
+    
+    Args:
+        workspace: Bitbucket workspace ID (e.g. "my-org")
+        repo_slug: Repository slug (e.g. "my-repo")
+        access_token: OAuth or App Password token
+    
+    Returns:
+        Dictionary mapping language names to bytes of code, e.g.:
+        {"Python": 12345, "JavaScript": 6789, ...}
+    """
+    try:
+        url = f"{BITBUCKET_API}/repositories/{workspace}/{repo_slug}/languages"
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Accept": "application/json",
+            "User-Agent": "house-of-apps-ai-engineering-manager",
+        }
+        
+        repo_full_name = f"{workspace}/{repo_slug}"
+        
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+            async with session.get(url, headers=headers) as resp:
+                if resp.status == 200:
+                    languages = await resp.json()
+                    logger.info(f"Fetched languages for {repo_full_name}: {list(languages.keys())}")
+                    return languages
+                elif resp.status == 404:
+                    logger.warning(f"Repository {repo_full_name} not found or no access")
+                    return {}
+                else:
+                    error_body = await resp.text()
+                    logger.warning(f"Failed to fetch languages for {repo_full_name}: {resp.status} - {error_body}")
+                    return {}
+    except Exception as e:
+        repo_full_name = f"{workspace}/{repo_slug}"
+        logger.error(f"Error fetching languages for {repo_full_name}: {e}", exc_info=True)
+        return {}
+
+
+async def fetch_bitbucket_tech_stack(
+    repo_full_name: str,
+) -> Dict[str, Any]:
+    """
+    Fetch complete tech stack information from Bitbucket repository.
+    
+    Combines language statistics into a single response.
+    Note: Bitbucket doesn't support repository topics like GitHub.
+    
+    Args:
+        repo_full_name: Repository full name (workspace/repo)
+    
+    Returns:
+        Dictionary containing:
+        {
+            "languages": {"Python": 12345, "JavaScript": 6789, ...},
+            "topics": [],  # Empty list since Bitbucket doesn't support topics
+            "source": "bitbucket"
+        }
+    """
+    try:
+        # Parse repo_full_name to extract workspace and repo_slug
+        parts = repo_full_name.split("/")
+        if len(parts) != 2:
+            logger.error(f"Invalid repo_full_name format: {repo_full_name}. Expected 'workspace/repo'")
+            return {
+                "languages": {},
+                "topics": [],
+                "source": "bitbucket",
+            }
+        
+        workspace, repo_slug = parts[0], parts[1]
+        
+        # Get Bitbucket access token
+        access_token = await get_access_token()
+        
+        # Fetch languages
+        languages = await fetch_bitbucket_repository_languages(
+            workspace=workspace,
+            repo_slug=repo_slug,
+            access_token=access_token,
+        )
+        
+        return {
+            "languages": languages,
+            "topics": [],  # Bitbucket doesn't support repository topics
+            "source": "bitbucket",
+        }
+    except Exception as e:
+        logger.error(f"Error fetching tech stack for {repo_full_name}: {e}", exc_info=True)
+        return {
+            "languages": {},
+            "topics": [],
+            "source": "bitbucket",
+        }
