@@ -71,3 +71,5 @@ async def verify_auth_token(authorization: str = Header(None)):
         "organization_id": data["data"]["organization_id"],
         "raw": data,
     }
+
+
