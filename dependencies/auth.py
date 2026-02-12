@@ -35,7 +35,7 @@ async def verify_auth_token(authorization: str = Header(None)):
         )
     status_code = 401
     try:
-        async with httpx.AsyncClient(timeout=5) as client:
+        async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.get(
                 AUTH_SERVICE_URL,
                 headers={"Authorization": f"Bearer {token}"},
