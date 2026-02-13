@@ -15,13 +15,13 @@ AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL")
 
 
 async def verify_auth_token(authorization: str = Header(None)):
-    start = time.time()
+    start = time.perf_counter()
     try:
         resp = await _verify_auth_token(authorization)
-        print(f"[TIMING] AUTH TOOK : {(time.time() - start)*1000:.2f} ms")
+        print(f"[TIMING] AUTH TOOK : {(time.perf_counter() - start)*1000:.2f} ms")
         return resp
     except Exception as e:
-        print(f"[TIMING] AUTH TOOK : {(time.time() - start)*1000:.2f} ms")
+        print(f"[TIMING] AUTH TOOK : {(time.perf_counter() - start)*1000:.2f} ms")
         raise e
 
 async def _verify_auth_token(authorization: str = Header(None)):
