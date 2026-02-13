@@ -162,7 +162,7 @@ def aggregate(session, user_agg):
 async def list_users_paginated_ch(session, page: int = 1, limit: int = 10, search: str = None, order_by="author", order_dir="ASC"):
     skip = (page - 1) * limit
 
-    VALID_ORDER_BY = {"author", "email", "total_additions", "total_removed", "total_commits"}
+    VALID_ORDER_BY = {"author", "email", "total_additions", "total_removed", "total_commits", "last_commit"}
     VALID_ORDER_DIR = {"ASC", "DESC"}
 
     if order_by not in VALID_ORDER_BY:
@@ -176,6 +176,7 @@ async def list_users_paginated_ch(session, page: int = 1, limit: int = 10, searc
         "total_additions": "total_additions",
         "total_removed":   "total_deletions",
         "total_commits":   "total_commits",
+        "last_commit":     "last_commit",
     }
     sql_order_col = ORDER_BY_MAP[order_by]
 
@@ -193,16 +194,17 @@ async def list_users_paginated_ch(session, page: int = 1, limit: int = 10, searc
         {"WHERE match(author, :search)" if search is not None else ""}
     """)
 
-    if order_by in {"total_additions", "total_removed", "total_commits"}:
+    if order_by in {"total_additions", "total_removed", "total_commits", "last_commit"}:
         data_query = text(f"""
             SELECT *
             FROM (
                 SELECT
                     email,
-                    author,
-                    sum(commit_count)   AS total_commits,
-                    sum(repo_additions) AS total_additions,
-                    sum(repo_deletions) AS total_deletions,
+                    any(author)           AS author,
+                    sum(commit_count)     AS total_commits,
+                    sum(repo_additions)   AS total_additions,
+                    sum(repo_deletions)   AS total_deletions,
+                    max(last_commit_date) AS last_commit,
                     groupArray((
                         repo_name,
                         commit_count,
@@ -223,7 +225,7 @@ async def list_users_paginated_ch(session, page: int = 1, limit: int = 10, searc
                     GROUP BY email, repo_name
                     {having_clause}
                 ) AS per_repo
-                GROUP BY email, author
+                GROUP BY email
             )
             ORDER BY {sql_order_col} {order_dir}
             LIMIT {limit} OFFSET {skip}
@@ -232,7 +234,8 @@ async def list_users_paginated_ch(session, page: int = 1, limit: int = 10, searc
         data_query = text(f"""
             SELECT
                 email,
-                author,
+                any(author)           AS author,
+                max(last_commit_date) AS last_commit,
                 groupArray((
                     repo_name,
                     commit_count,
@@ -253,7 +256,7 @@ async def list_users_paginated_ch(session, page: int = 1, limit: int = 10, searc
                 GROUP BY email, repo_name
                 {having_clause}
             ) AS per_repo
-            GROUP BY email, author
+            GROUP BY email
             ORDER BY {sql_order_col} {order_dir}
             LIMIT {limit} OFFSET {skip}
         """)
@@ -283,13 +286,9 @@ async def list_users_paginated_ch(session, page: int = 1, limit: int = 10, searc
 
     for r in results:
         repos = []
-        last_commit = None
 
         for proj in r.projects:
             repo_name, commit_count, additions, deletions, last_commit_date = proj
-
-            if not last_commit or last_commit_date > last_commit:
-                last_commit = last_commit_date
 
             repo_hours = (now - last_commit_date).total_seconds() / 3600
             repo_status = "active" if repo_hours <= 6 else "idle" if repo_hours <= 24 else "inactive"
@@ -306,6 +305,7 @@ async def list_users_paginated_ch(session, page: int = 1, limit: int = 10, searc
         total_deletions = sum(p[3] for p in r.projects)
         total_commits   = sum(p[1] for p in r.projects)
 
+        last_commit = r.last_commit
         hours = (now - last_commit).total_seconds() / 3600
         user_status = "active" if hours <= 6 else "idle" if hours <= 24 else "inactive"
 
@@ -315,6 +315,7 @@ async def list_users_paginated_ch(session, page: int = 1, limit: int = 10, searc
             "repos": repos,
             "changes": {"additions": total_additions, "deletions": total_deletions},
             "total_commits": total_commits,
+            "last_commit": last_commit.isoformat(),
             "status": user_status
         })
 
@@ -325,6 +326,7 @@ async def list_users_paginated_ch(session, page: int = 1, limit: int = 10, searc
         "total_pages": total_pages,
         "data": data
     }
+
 
 def make_aware(dt):
     """Convert naive datetime to UTC-aware datetime"""
