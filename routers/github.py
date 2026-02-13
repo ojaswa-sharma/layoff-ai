@@ -73,6 +73,7 @@ async def webhook_github(request: Request, session: Session = Depends(get_ch_ses
                 return {"message": f"Ignoring installation action: {action}"}
         
         if event_type == "pull_request":
+            print(f'[PR] : {request_data}')
             return await handle_pull_request_event(request_data, session)
         
         if event_type == "push":
