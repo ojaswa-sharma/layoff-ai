@@ -4,6 +4,7 @@ from services.auth.auth_client import get_client
 import aiohttp
 import logging
 from dotenv import load_dotenv
+import time
 import os
 
 load_dotenv()
@@ -14,11 +15,20 @@ AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL")
 
 
 async def verify_auth_token(authorization: str = Header(None)):
+    start = time.time()
+    try:
+        resp = await _verify_auth_token(authorization)
+        print(f"[TIMING] AUTH TOOK : {(time.time() - start)*1000:.2f} ms")
+        return resp
+    except Exception as e:
+        print(f"[TIMING] AUTH TOOK : {(time.time() - start)*1000:.2f} ms")
+        raise e
+
+async def _verify_auth_token(authorization: str = Header(None)):
     """
     Validates Bearer token via internal auth service.
     Returns auth payload if valid, otherwise raises 401.
     """
-
     if not authorization:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
