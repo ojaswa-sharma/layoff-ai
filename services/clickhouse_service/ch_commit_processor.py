@@ -11,7 +11,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from models.commits import Commit, SyncStatus
-from models.ch_models import CommitCH, RepoSyncEventCH
+from models.ch_models import CommitCH, RepoSyncEventCH, PRMergeCH
 from services.git_diff import fetch_diff_from_webhook, fetch_bitbucket_diff, count_diff_stats
 from services.ai_service import summarize_and_upload
 from services.background_worker import get_worker_manager
@@ -31,6 +31,8 @@ async def check_commit_exists_ch(
     """
     Check if a commit already exists in ClickHouse (idempotency check).
     
+    Checks both CommitCH and PRMergeCH tables.
+    
     Args:
         session: SQLAlchemy session
         commit_hash: Commit hash to check
@@ -38,16 +40,27 @@ async def check_commit_exists_ch(
         installation_id: Installation ID
         
     Returns:
-        True if commit exists, False otherwise
+        True if commit exists in either CommitCH or PRMergeCH, False otherwise
     """
     try:
-        count = session.query(func.count(CommitCH.commit_hash)).filter(
+        # Check in CommitCH table
+        commit_count = session.query(func.count(CommitCH.commit_hash)).filter(
             CommitCH.commit_hash == commit_hash,
             CommitCH.repository_name == repo_name,
             CommitCH.installation_id == installation_id,
         ).scalar()
         
-        return count > 0
+        if commit_count > 0:
+            return True
+        
+        # Check in PRMergeCH table
+        pr_merge_count = session.query(func.count(PRMergeCH.merge_commit_hash)).filter(
+            PRMergeCH.merge_commit_hash == commit_hash,
+            PRMergeCH.repository_name == repo_name,
+            PRMergeCH.installation_id == installation_id,
+        ).scalar()
+        
+        return pr_merge_count > 0
     except Exception as e:
         logger.error(f"Error checking commit existence: {e}")
         return False
