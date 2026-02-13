@@ -1,5 +1,6 @@
 import httpx
 from fastapi import Header, HTTPException, status
+from services.auth.auth_client import get_client
 import aiohttp
 import logging
 from dotenv import load_dotenv
@@ -35,16 +36,14 @@ async def verify_auth_token(authorization: str = Header(None)):
         )
     status_code = 401
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(
-                AUTH_SERVICE_URL,
-                headers={"Authorization": f"Bearer {token}"},
-            )
-            status_code = resp.status_code
+        headers = {"Authorization": f"Bearer {token}"}
+        client = get_client()
+        async with client.get("/v1/auth/validate",headers=headers) as resp:
+            status_code = resp.status
             resp.raise_for_status()
-            data = resp.json()
-    except httpx.HTTPStatusError as e:
-        logger.error(f"Auth API rejected token: {e.response.text}")
+            data = await resp.json()
+    except aiohttp.ClientResponseError as e:
+        logger.error(f"Auth API rejected token: {e.message}")
         if int(status_code) == 429:
             raise HTTPException(
                 status_code = 429,

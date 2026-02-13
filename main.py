@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from services.graphiti.init_client import init_graphiti, get_graphiti
 from dependencies.ch_db import init_ch_engine
+from services.auth.auth_client import init_auth_client, stop_session
 
 
 async def lifespan(app : FastAPI):
@@ -15,8 +16,10 @@ async def lifespan(app : FastAPI):
     init_ch_engine()
     _graphiti = get_graphiti()
     await _graphiti.build_indices_and_constraints()
+    init_auth_client()
     print(f"[LIFESPAN] Event complete")
     yield
+    await stop_session()
     print(f"[LIFESPAN] Ending")
 
 app = FastAPI(lifespan=lifespan)
