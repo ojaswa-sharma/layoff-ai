@@ -49,6 +49,7 @@ async def test_token():
         }
 
 
+
 @router.post('/webhook')
 async def webhook_bitbucket(request: Request, session: Session = Depends(get_ch_session)):
     """
@@ -65,10 +66,11 @@ async def webhook_bitbucket(request: Request, session: Session = Depends(get_ch_
         request_data = await request.json()
         
         if event_type == "pullrequest:fulfilled":
+            print(f'[PR] PR DATA BITBUCKET : {request_data}')
             return await handle_pullrequest_fulfilled_event(request_data, session)
         
         if event_type == "repo:push":
-            print("PUSHED")
+            print(f'[PR] PUSH DATA BITBUCKET : {request_data}')
             return await handle_push_event(request_data, session)
         
         return {
