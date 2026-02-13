@@ -47,7 +47,7 @@ async def list_users_paginated(
     List users with pagination and repository statistics.
     """
     try:
-        result = await list_users_paginated_ch(session, page=page, limit=limit, search=search, order_by=order_by, order_dir=order_by.value)
+        result = await list_users_paginated_ch(session, page=page, limit=limit, search=search, order_by=order_by.value, order_dir=order_dir.value)
         return result
     except Exception as e:
         logger.error(f"Error listing paginated users: {e}")

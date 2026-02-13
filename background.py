@@ -16,21 +16,15 @@ async def lifespan(app : FastAPI):
 
     load_dotenv()
     print(f"[LIFESPAN] Initializing app")
-    # startup_()
-    init_graphiti()
+    # init_graphiti()
     init_ch_engine()
-    _graphiti = get_graphiti()
-    await _graphiti.build_indices_and_constraints()
-    
-    # Start background workers
+    # _graphiti = get_graphiti()
+    # await _graphiti.build_indices_and_constraints()
     worker_manager = get_kafka_producer()
     await worker_manager.start()
-    
-    
     print(f"[LIFESPAN] Event complete")
     yield
     print(f"[LIFESPAN] Ending")
-    
     await worker_manager.stop()
 
 app = FastAPI(lifespan=lifespan)

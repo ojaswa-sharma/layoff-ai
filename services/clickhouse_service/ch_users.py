@@ -14,6 +14,7 @@ from models.ch_models import CommitCH, CommitAnalysisCH, UserRepoAggregate
 from sqlalchemy import func, select, literal_column, case
 from datetime import datetime, timezone
 from fastapi.concurrency import run_in_threadpool
+import asyncio
 
 
 logger = logging.getLogger(__name__)
@@ -158,62 +159,113 @@ def aggregate(session, user_agg):
     
     return session.execute(user_agg).fetchall()
 
-async def list_users_paginated_ch(session, page: int = 1, limit: int = 10, search : str = None, order_by = "author", order_dir = "ASC"):
+async def list_users_paginated_ch(session, page: int = 1, limit: int = 10, search: str = None, order_by="author", order_dir="ASC"):
     skip = (page - 1) * limit
 
-    base_query = f"""
-    SELECT
-        email,
-        projects,
-        total_users
-    FROM (
-        SELECT
-            email,
-            groupArray(
-                (
-                    repo_name,
-                    author,
-                    commit_count,
-                    total_additions,
-                    total_deletions,
-                    last_commit_date
-                )
-            ) AS projects,
-            count(*) OVER() AS total_users
+    VALID_ORDER_BY = {"author", "email", "total_additions", "total_removed", "total_commits"}
+    VALID_ORDER_DIR = {"ASC", "DESC"}
+
+    if order_by not in VALID_ORDER_BY:
+        order_by = "author"
+    if order_dir.upper() not in VALID_ORDER_DIR:
+        order_dir = "ASC"
+
+    ORDER_BY_MAP = {
+        "author":          "author",
+        "email":           "email",
+        "total_additions": "total_additions",
+        "total_removed":   "total_deletions",
+        "total_commits":   "total_commits",
+    }
+    sql_order_col = ORDER_BY_MAP[order_by]
+
+    having_clause = "HAVING match(author, :search)" if search is not None else ""
+
+    count_query = text(f"""
+        SELECT uniq(email) AS total_users
         FROM (
             SELECT
                 email,
-                repo_name,
-                anyMerge(author) AS author,
-                countMerge(commit_count) AS commit_count,
-                sumMerge(total_additions) AS total_additions,
-                sumMerge(total_deletions) AS total_deletions,
-                maxMerge(last_commit_date) AS last_commit_date
+                anyMerge(author) AS author
             FROM user_repo_agg
-            GROUP BY email, repo_name
-        ) AS merged
-    """
+            GROUP BY email
+        )
+        {"WHERE match(author, :search)" if search is not None else ""}
+    """)
 
-    if search is not None:
-        base_query += " WHERE match(author, :search)"
+    if order_by in {"total_additions", "total_removed", "total_commits"}:
+        data_query = text(f"""
+            SELECT *
+            FROM (
+                SELECT
+                    email,
+                    author,
+                    sum(commit_count)   AS total_commits,
+                    sum(repo_additions) AS total_additions,
+                    sum(repo_deletions) AS total_deletions,
+                    groupArray((
+                        repo_name,
+                        commit_count,
+                        repo_additions,
+                        repo_deletions,
+                        last_commit_date
+                    )) AS projects
+                FROM (
+                    SELECT
+                        email,
+                        anyMerge(author)           AS author,
+                        repo_name,
+                        countMerge(commit_count)   AS commit_count,
+                        sumMerge(total_additions)  AS repo_additions,
+                        sumMerge(total_deletions)  AS repo_deletions,
+                        maxMerge(last_commit_date) AS last_commit_date
+                    FROM user_repo_agg
+                    GROUP BY email, repo_name
+                    {having_clause}
+                ) AS per_repo
+                GROUP BY email, author
+            )
+            ORDER BY {sql_order_col} {order_dir}
+            LIMIT {limit} OFFSET {skip}
+        """)
+    else:
+        data_query = text(f"""
+            SELECT
+                email,
+                author,
+                groupArray((
+                    repo_name,
+                    commit_count,
+                    repo_additions,
+                    repo_deletions,
+                    last_commit_date
+                )) AS projects
+            FROM (
+                SELECT
+                    email,
+                    anyMerge(author)           AS author,
+                    repo_name,
+                    countMerge(commit_count)   AS commit_count,
+                    sumMerge(total_additions)  AS repo_additions,
+                    sumMerge(total_deletions)  AS repo_deletions,
+                    maxMerge(last_commit_date) AS last_commit_date
+                FROM user_repo_agg
+                GROUP BY email, repo_name
+                {having_clause}
+            ) AS per_repo
+            GROUP BY email, author
+            ORDER BY {sql_order_col} {order_dir}
+            LIMIT {limit} OFFSET {skip}
+        """)
 
-    base_query += f"""
-        GROUP BY email
-        ORDER BY email
-        LIMIT {limit} OFFSET {skip}
-    ) AS final_users
-    """
-
-    query = text(base_query)
     params = {}
     if search is not None:
         params["search"] = f"(?i){search}"
 
+    count_result = await run_in_threadpool(session.execute, count_query, params)
+    total_items = count_result.fetchone().total_users
 
-    rows = await run_in_threadpool(session.execute, query, params)
-    results = rows.fetchall()
-
-    if not results:
+    if total_items == 0:
         return {
             "page": page,
             "limit": limit,
@@ -222,24 +274,20 @@ async def list_users_paginated_ch(session, page: int = 1, limit: int = 10, searc
             "data": []
         }
 
+    data_result = await run_in_threadpool(session.execute, data_query, params)
+    results = data_result.fetchall()
+
+    total_pages = (total_items + limit - 1) // limit
     now = datetime.utcnow()
     data = []
-    total_items = results[0].total_users
-    total_pages = (total_items + limit - 1) // limit
 
     for r in results:
-        email = r.email
         repos = []
-        total_additions = 0
-        total_deletions = 0
-        total_commits = 0
         last_commit = None
 
         for proj in r.projects:
-            repo_name, author, commit_count, additions, deletions, last_commit_date = proj
-            total_additions += additions
-            total_deletions += deletions
-            total_commits += commit_count
+            repo_name, commit_count, additions, deletions, last_commit_date = proj
+
             if not last_commit or last_commit_date > last_commit:
                 last_commit = last_commit_date
 
@@ -254,12 +302,16 @@ async def list_users_paginated_ch(session, page: int = 1, limit: int = 10, searc
                 "activity_status": repo_status,
             })
 
+        total_additions = sum(p[2] for p in r.projects)
+        total_deletions = sum(p[3] for p in r.projects)
+        total_commits   = sum(p[1] for p in r.projects)
+
         hours = (now - last_commit).total_seconds() / 3600
         user_status = "active" if hours <= 6 else "idle" if hours <= 24 else "inactive"
 
         data.append({
-            "email": email,
-            "author": r.projects[0][1],
+            "email": r.email,
+            "author": r.author,
             "repos": repos,
             "changes": {"additions": total_additions, "deletions": total_deletions},
             "total_commits": total_commits,
