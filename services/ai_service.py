@@ -203,7 +203,7 @@ NEVER DO THE FOLLOWING:
 
 STRICT COMPLIANCE IS REQUIRED AT ALL TIMES.
     """
-    for _ in range(30):
+    for _ in range(int(os.getenv("OPENAI_RETRIES", 30))):
         resp = await openai.responses.parse(
             model="gpt-5-nano",
             reasoning={"effort" : "minimal"},
