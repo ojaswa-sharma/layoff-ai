@@ -14,3 +14,4 @@ gunicorn
 aiokafka
 kafka-python
 langfuse
+orjson

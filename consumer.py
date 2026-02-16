@@ -20,15 +20,15 @@ async def main():
         count = 0
         while True:
             await asyncio.sleep(1)
-            free = await consumer._get_semaphore()
-            if free == 5:
-                if count < 5:
-                    count += 1
-                else:
-                    continue
-            else:
-                count = 0
-            print(f"[SEMAPHORE] : CURRENT SEMAPHORE COUNT : {free}\n[GC] GC COUNT : {len(gc.get_objects())}")
+            # free = await consumer._get_semaphore()
+            # if free == 5:
+            #     if count < 5:
+            #         count += 1
+            #     else:
+            #         continue
+            # else:
+            #     count = 0
+            # print(f"[SEMAPHORE] : CURRENT SEMAPHORE COUNT : {free}\n[GC] GC COUNT : {len(gc.get_objects())}")
     except KeyboardInterrupt:
         print("[SHUTDOWN] Received exit signal")
     finally:

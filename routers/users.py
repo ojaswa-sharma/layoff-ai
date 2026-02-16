@@ -4,6 +4,7 @@ from dependencies.ch_db import get_ch_session
 from services.clickhouse_service.ch_users import list_users_ch, list_users_paginated_ch, get_developer_ch
 from services.clickhouse_service.ch_tech_stack import get_tech_stack_ch
 from services.graphiti.graphiti_store import get_graphitit_personalizer
+from fastapi.responses import ORJSONResponse
 import logging
 from dependencies.auth import verify_auth_token
 from models.orders import OrderBy, OrderDir
@@ -48,7 +49,7 @@ async def list_users_paginated(
     """
     try:
         result = await list_users_paginated_ch(session, page=page, limit=limit, search=search, order_by=order_by.value, order_dir=order_dir.value)
-        return result
+        return ORJSONResponse(content = result)
     except Exception as e:
         logger.error(f"Error listing paginated users: {e}")
         return {"error": str(e)}
@@ -83,26 +84,25 @@ async def get_developer(
             limit=limit,
         )
 
-        tech_stack_data = await get_tech_stack_ch(
-            session=session,
-            repository_full_name=dev_data.get("repository_full_name", ""),
-            installation_id=dev_data.get("installation_id", 0),
-        )
+        # tech_stack_data = await get_tech_stack_ch(
+        #     session=session,
+        #     repository_full_name=dev_data.get("repository_full_name", ""),
+        #     installation_id=dev_data.get("installation_id", 0),
+        # )
 
-        # Build response matching the original format
         response = {
             "user_data": "TBD",
             "projects": dev_data.get("projects", []),
             "stats": dev_data.get("stats", {}),
             "pagination": dev_data.get("pagination", {}),
             "commit_history": dev_data.get("commit_history", []),
-            "tech_stack_data": tech_stack_data,
+            # "tech_stack_data": tech_stack_data,
         }
 
         if project:
             response["project_data"] = project_data
 
-        return response
+        return ORJSONResponse(content=response)
 
     except Exception as e:
         logger.error(f"Error while getting developer data: {e}")
