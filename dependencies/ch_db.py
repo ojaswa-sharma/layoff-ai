@@ -104,6 +104,7 @@ def init_ch_engine():
             base_url = f"{protocol}://{username}:{password}@{host}:{port}/{database}"
         else:
             base_url = f"{protocol}://{username}@{host}:{port}/{database}"
+        print(f"[CLICKHOUSE] CLICKHOUSE ATTEMPTING ON : {base_url}")
         
         query_params = []
         if secure:
