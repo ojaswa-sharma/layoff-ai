@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 from sqlalchemy.orm import Session
 from models.commits import SyncStatus
 from services.clickhouse_service.ch_commit_processor import process_commit_from_webhook
+from services.clickhouse_service.ch_commit_processor import check_commit_exists_ch
 from services.clickhouse_service.ch_pr_merge_processor import process_github_pr_merge
 from services.clickhouse_service.ch_backfill import get_repository_status_ch, update_repository_status_ch, backfill_repository_ch
 from services.tech_stack_service import fetch_github_tech_stack
@@ -73,10 +74,11 @@ async def webhook_github(request: Request, session: Session = Depends(get_ch_ses
                 return {"message": f"Ignoring installation action: {action}"}
         
         if event_type == "pull_request":
-            print(f'[PR] : {request_data}')
+            # print(f'[PR] : {request_data}')
             return await handle_pull_request_event(request_data, session)
         
         if event_type == "push":
+            # print(f'[PUSH] : {request_data}')
             return await handle_push_event(request_data, session)
         
         return {
@@ -230,6 +232,29 @@ async def handle_push_event(request_data: dict, session: Session):
         skipped_count = 0
         
         for commit in request_data.get("commits", []):
+
+            # for commit in payload["commits"]:
+            # msg = commit.get("message", "")
+            # if msg.startswith("Merge pull request"):
+            #     continue  # skip merge commit
+
+            # if len(commit.get('parents', [])) > 1:
+            #     print(f"[DEBUG] Skipping merge commit: {commit.get('id')}")
+            #     continue  # skip merge commit
+            
+            full_commit_hash = commit["id"]
+            commit_hash = full_commit_hash[:12]
+
+            exists = await check_commit_exists_ch(
+                session,
+                commit_hash,
+                repo_name,
+                installation_id,
+            )
+            if exists:
+                logger.debug(f"Commit {commit_hash} already exists, skipping")
+                break
+
             result = await process_commit_from_webhook(
                 commit_data=commit,
                 repo_full_name=repo_full_name,
