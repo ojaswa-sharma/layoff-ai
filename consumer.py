@@ -9,6 +9,11 @@ warnings.filterwarnings(
     "ignore",
     message="Pydantic serializer warnings:",
 )
+warnings.filterwarnings(
+    "ignore",
+    message="Invalid duplicate_name",
+)
+
 
 
 load_dotenv()
