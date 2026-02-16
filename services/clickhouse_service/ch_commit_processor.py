@@ -56,8 +56,8 @@ async def check_commit_exists_ch(
         # Check in PRMergeCH table
         pr_merge_count = session.query(func.count(PRMergeCH.merge_commit_hash)).filter(
             PRMergeCH.merge_commit_hash == commit_hash,
-            # PRMergeCH.repository_name == repo_name,
-            # PRMergeCH.installation_id == installation_id,
+            PRMergeCH.repository_name == repo_name,
+            PRMergeCH.installation_id == installation_id,
         ).scalar()
         
         return pr_merge_count > 0
@@ -250,6 +250,8 @@ async def process_commit_from_webhook(
     try:
         full_commit_hash = commit_data["id"]
         commit_hash = full_commit_hash[:12]
+
+        print("commit_hash===============: ", commit_hash)
         
         if skip_existing:
             exists = await check_commit_exists_ch(
@@ -258,6 +260,7 @@ async def process_commit_from_webhook(
                 repo_name,
                 installation_id,
             )
+            print("exists===============: ", exists)
             if exists:
                 logger.debug(f"Commit {commit_hash} already exists, skipping")
                 return None
