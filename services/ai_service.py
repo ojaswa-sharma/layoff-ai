@@ -1,11 +1,11 @@
-from openai import AsyncOpenAI
+# from openai import AsyncOpenAI
+from langfuse.openai import AsyncOpenAI
 import os
 from models.commits import CommitDetails
 from models.graphiti_input import botMessage
 from services.graphiti.graphiti_store import get_graphitit_personalizer
 import asyncio
 from dotenv import load_dotenv
-from fastapi.concurrency import run_in_threadpool
 from services.clickhouse_service.ch_ai_service import insert_commit_analysis_ch
 from dependencies.ch_db import get_ch_session_direct
 from datetime import datetime
@@ -260,7 +260,7 @@ async def summarize_and_upload(diff_text, name, mail, repo_name, commit_title, d
             db = get_ch_session_direct()
             created_session = True
             
-        insert_commit_analysis_ch(db, diff, commit_hash, mail, repo_name)
+        _ = await asyncio.to_thread(insert_commit_analysis_ch(db, diff, commit_hash, mail, repo_name))
         print(f"[CLICKHOUSE] Added to clickhouse")
         await graphiti.add_to_graph(graph_id=f"{mail}_{repo_name}", message=msg.content, commit_hash=commit_hash, commit_date = commit_date)
     except Exception as e:

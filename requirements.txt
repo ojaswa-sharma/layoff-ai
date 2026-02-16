@@ -13,3 +13,4 @@ clickhouse-sqlalchemy
 gunicorn
 aiokafka
 kafka-python
+langfuse
