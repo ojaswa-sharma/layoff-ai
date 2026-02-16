@@ -260,7 +260,7 @@ async def summarize_and_upload(diff_text, name, mail, repo_name, commit_title, d
             db = get_ch_session_direct()
             created_session = True
             
-        _ = await asyncio.to_thread(insert_commit_analysis_ch(db, diff, commit_hash, mail, repo_name))
+        _ = await asyncio.to_thread(insert_commit_analysis_ch, db, diff, commit_hash, mail, repo_name)
         print(f"[CLICKHOUSE] Added to clickhouse")
         await graphiti.add_to_graph(graph_id=f"{mail}_{repo_name}", message=msg.content, commit_hash=commit_hash, commit_date = commit_date)
     except Exception as e:

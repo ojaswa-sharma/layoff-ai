@@ -16,7 +16,8 @@ async def main():
             if free == 5:
                 if count < 5:
                     count += 1
-                continue
+                else:
+                    continue
             else:
                 count = 0
             print(f"[SEMAPHORE] : CURRENT SEMAPHORE COUNT : {free}")
