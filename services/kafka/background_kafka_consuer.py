@@ -65,6 +65,9 @@ class BackgroundKafkaConsumer:
             print(f"[ERROR] Error while summarizing : {e}")
         finally:
             self._semaphore.release()
+    
+    async def _get_semaphore(self):
+        return self._semaphore._value
 
 if __name__ == "__main__":
     from services.kafka.background_kafka_worker import BackgroundProducer

@@ -9,8 +9,17 @@ async def main():
     consumer = BackgroundKafkaConsumer()
     await consumer.startup()
     try:
+        count = 0
         while True:
             await asyncio.sleep(1)
+            free = await consumer._get_semaphore()
+            if free == 5:
+                if count < 5:
+                    count += 1
+                continue
+            else:
+                count = 0
+            print(f"[SEMAPHORE] : CURRENT SEMAPHORE COUNT : {free}")
     except KeyboardInterrupt:
         print("[SHUTDOWN] Received exit signal")
     finally:
