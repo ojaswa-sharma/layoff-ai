@@ -203,20 +203,30 @@ NEVER DO THE FOLLOWING:
 
 STRICT COMPLIANCE IS REQUIRED AT ALL TIMES.
     """
-
-    resp = await openai.responses.parse(
-        model="gpt-5-nano",
-        reasoning={"effort" : "minimal"},
-        input=[
-            {"role": "system", "content": system_prompt},
-            {
-                "role": "user",
-                "content": user_prompt,
-            },
-        ],
-        text_format=CommitDetails,
-    )
-    print(resp.usage)
+    for _ in range(30):
+        resp = await openai.responses.parse(
+            model="gpt-5-nano",
+            reasoning={"effort" : "minimal"},
+            input=[
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": user_prompt,
+                },
+            ],
+            text_format=CommitDetails,
+        )
+        print(resp.usage)
+        if resp.error and resp.error.code == "rate_limit_exceeded":
+            await asyncio.sleep(60)
+        else:
+            return {
+                "commit_summmary" : resp.output_parsed.commit_summary,
+                "work_category" : resp.output_parsed.work_category.value,
+                "department" : resp.output_parsed.department.value,
+                "commiters_performance" : resp.output_parsed.commiters_performance,
+                "work_type" : resp.output_parsed.work_type.value
+            }
     return {
         "commit_summmary" : resp.output_parsed.commit_summary,
         "work_category" : resp.output_parsed.work_category.value,
@@ -224,6 +234,7 @@ STRICT COMPLIANCE IS REQUIRED AT ALL TIMES.
         "commiters_performance" : resp.output_parsed.commiters_performance,
         "work_type" : resp.output_parsed.work_type.value
     }
+
 
 async def summarize_and_upload(diff_text, name, mail, repo_name, commit_title, db = None, commit_hash = None, commit_date = None):
     created_session = False
