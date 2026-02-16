@@ -56,8 +56,8 @@ async def check_commit_exists_ch(
         # Check in PRMergeCH table
         pr_merge_count = session.query(func.count(PRMergeCH.merge_commit_hash)).filter(
             PRMergeCH.merge_commit_hash == commit_hash,
-            PRMergeCH.repository_name == repo_name,
-            PRMergeCH.installation_id == installation_id,
+            # PRMergeCH.repository_name == repo_name,
+            # PRMergeCH.installation_id == installation_id,
         ).scalar()
         
         return pr_merge_count > 0
