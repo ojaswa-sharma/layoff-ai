@@ -10,7 +10,7 @@ import os
 import asyncio
 from sqlalchemy.orm import Session
 from models.commits import SyncStatus
-from services.clickhouse_service.ch_commit_processor import process_bitbucket_commit_from_webhook
+from services.clickhouse_service.ch_commit_processor import process_bitbucket_commit_from_webhook, check_commit_exists_ch
 from services.clickhouse_service.ch_pr_merge_processor import process_bitbucket_pr_merge
 from services.clickhouse_service.ch_backfill import get_repository_status_ch, update_repository_status_ch
 from services.tech_stack_service import fetch_bitbucket_tech_stack
@@ -229,6 +229,24 @@ async def handle_push_event(request_data: dict, session: Session):
             commits = change.get("commits", [])
             
             for commit in commits:
+
+                full_commit_hash = commit.get("hash", "")
+                if not full_commit_hash:
+                    logger.warning("Commit missing hash field")
+                    return None
+        
+                commit_hash = full_commit_hash[:12]
+
+                exists = await check_commit_exists_ch(
+                    session,
+                    commit_hash,
+                    repo_name,
+                    workspace_id,
+                )
+                if exists:
+                    logger.debug(f"Commit {commit_hash} already exists, skipping")
+                    break
+
                 result = await process_bitbucket_commit_from_webhook(
                     commit_data=commit,
                     repo_full_name=repo_full_name,
