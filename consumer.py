@@ -2,6 +2,14 @@ import asyncio
 from services.kafka.background_kafka_consuer import BackgroundKafkaConsumer
 import os
 from dotenv import load_dotenv
+import warnings
+import gc
+
+warnings.filterwarnings(
+    "ignore",
+    message="Pydantic serializer warnings:",
+)
+
 
 load_dotenv()
 
@@ -20,7 +28,7 @@ async def main():
                     continue
             else:
                 count = 0
-            print(f"[SEMAPHORE] : CURRENT SEMAPHORE COUNT : {free}")
+            print(f"[SEMAPHORE] : CURRENT SEMAPHORE COUNT : {free}\n[GC] GC COUNT : {print(len(gc.get_objects()))}")
     except KeyboardInterrupt:
         print("[SHUTDOWN] Received exit signal")
     finally:
