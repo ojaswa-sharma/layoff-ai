@@ -66,9 +66,11 @@ async def webhook_bitbucket(request: Request, session: Session = Depends(get_ch_
         request_data = await request.json()
         
         if event_type == "pullrequest:fulfilled":
+            # print(f"[REQUEST DATA] PR : {request_data}")
             return await handle_pullrequest_fulfilled_event(request_data, session)
         
         if event_type == "repo:push":
+            # print(f"[REQUEST DATA] PUSH : {request_data}")
             return await handle_push_event(request_data, session)
         
         return {
@@ -236,6 +238,7 @@ async def handle_push_event(request_data: dict, session: Session):
                     return None
         
                 commit_hash = full_commit_hash[:12]
+                print(f"[COMMIT HASH] =============: {commit_hash}")
 
                 exists = await check_commit_exists_ch(
                     session,
@@ -243,6 +246,7 @@ async def handle_push_event(request_data: dict, session: Session):
                     repo_name,
                     workspace_id,
                 )
+                print(f"[EXISTS] =============: {exists}")
                 if exists:
                     logger.debug(f"Commit {commit_hash} already exists, skipping")
                     break
