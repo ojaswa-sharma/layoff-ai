@@ -223,26 +223,10 @@ async def process_bitbucket_pr_merge(
     repo_url: str,
     workspace_id: int,
     session: Session,
-    skip_existing: bool = True,
+    skip_existing: bool = False,
 ) -> Optional[PRMerge]:
     """
-    Process a Bitbucket PR merge event using ClickHouse.
-    
-    This function:
-    1. Checks if PR merge already exists (idempotency)
-    2. Creates a PRMerge model
-    3. Stores it in ClickHouse pr_merges table
-    4. Does NOT fetch diff or track line changes
-    
-    Args:
-        pr_data: PR data from Bitbucket webhook payload
-        repo_full_name: Repository full name (workspace/repo)
-        repo_name: Repository name only
-        repo_url: Repository HTML URL
-        workspace_id: Bitbucket workspace identifier (used as installation_id equivalent)
-        session: SQLAlchemy session
-        skip_existing: If True, skip PR merges that already exist
-    
+    Process a Bitbucket PR event (created, updated, fulfilled, rejected) using ClickHouse.
     Returns:
         PRMerge model if successfully processed, None if skipped
     """
@@ -251,20 +235,31 @@ async def process_bitbucket_pr_merge(
         pr_title = pr_data.get("title", "")
         
         if not pr_number:
-            logger.warning("PR merge event missing PR ID")
+            logger.warning("PR event missing PR ID")
             return None
         
+        # Extract PR state and map to our status values
+        pr_state = pr_data.get("state", "").upper()  # Bitbucket uses uppercase: "OPEN", "MERGED", "DECLINED", "SUPERSEDED"
+        
+        # Map Bitbucket states to our status values
+        if pr_state == "OPEN":
+            status = "open"
+        elif pr_state == "MERGED":
+            status = "merged"
+        elif pr_state in ["DECLINED", "SUPERSEDED"]:
+            status = "closed"
+        else:
+            # Default to open if state is unknown
+            logger.warning(f"Unknown PR state '{pr_state}' for PR #{pr_number}, defaulting to 'open'")
+            status = "open"
+        
+        # Extract merge commit hash (only for merged PRs)
         merge_commit_info = pr_data.get("merge_commit")
         if not merge_commit_info:
             merge_commit_info = pr_data.get("destination", {}).get("commit", {})
         
         merge_commit_hash = merge_commit_info.get("hash", "") if merge_commit_info else ""
-        
-        if not merge_commit_hash:
-            logger.warning(f"PR #{pr_number} merge event missing merge commit hash")
-            return None
-        
-        merge_commit_hash_short = merge_commit_hash[:12]
+        merge_commit_hash_short = merge_commit_hash[:12] if merge_commit_hash else None
         
         # Extract created_by info (PR creator)
         author_info = pr_data.get("author", {})
@@ -281,32 +276,59 @@ async def process_bitbucket_pr_merge(
         if not created_by_email:
             created_by_email = f"{created_by_name}@bitbucket.org"
         
-        # Extract merged_by info (for merged PRs, might be same as author or different)
-        merged_by_name = created_by_name  # Default to author, can be updated if merge info available
-        merged_by_email = created_by_email
+        # Extract merged_by info (only for merged PRs)
+        merged_by_name = None
+        merged_by_email = None
         
-        # Check if there's separate merge information
-        merge_info = pr_data.get("merge_commit", {}).get("author", {}) if pr_data.get("merge_commit") else {}
-        if merge_info:
-            merged_by_name = merge_info.get("display_name", created_by_name)
-            merged_by_email = merge_info.get("email", created_by_email)
+        if status == "merged":
+            # Check if there's separate merge information
+            merge_info = pr_data.get("merge_commit", {}).get("author", {}) if pr_data.get("merge_commit") else {}
+            if merge_info:
+                merged_by_name = merge_info.get("display_name", created_by_name)
+                merged_by_email = merge_info.get("email", created_by_email)
+            else:
+                # Default to author if no merge info
+                merged_by_name = created_by_name
+                merged_by_email = created_by_email
         
-        merged_at_str = pr_data.get("updated_on") or pr_data.get("created_on")
-        if merged_at_str:
+        # Extract branch name
+        source_info = pr_data.get("source", {})
+        branch_info = source_info.get("branch", {}) if source_info else {}
+        branch = branch_info.get("name") if branch_info else None
+        
+        # Extract additions and deletions (may not be available in webhook payload)
+        # Bitbucket webhook may not include diff stats, so these will be None
+        additions = pr_data.get("summary", {}).get("additions") if pr_data.get("summary") else None
+        deletions = pr_data.get("summary", {}).get("deletions") if pr_data.get("summary") else None
+        
+        # Extract dates
+        created_at_str = pr_data.get("created_on")
+        updated_at_str = pr_data.get("updated_on")
+        closed_date_str = pr_data.get("closed_date")
+        
+        # Parse dates
+        def parse_date(date_str: str) -> datetime:
+            if not date_str:
+                return datetime.utcnow()
             try:
-                if merged_at_str.endswith("Z"):
-                    merged_at_str = merged_at_str.replace("Z", "+00:00")
-                elif "+" not in merged_at_str and "-" not in merged_at_str[-6:]:
-                    merged_at_str = merged_at_str + "+00:00"
-                merge_date = datetime.fromisoformat(merged_at_str)
+                if date_str.endswith("Z"):
+                    date_str = date_str.replace("Z", "+00:00")
+                elif "+" not in date_str and "-" not in date_str[-6:]:
+                    date_str = date_str + "+00:00"
+                return datetime.fromisoformat(date_str)
             except (ValueError, AttributeError) as e:
-                logger.warning(f"Could not parse merge date {merged_at_str}: {e}, using current time")
-                merge_date = datetime.utcnow()
-        else:
-            merge_date = datetime.utcnow()
+                logger.warning(f"Could not parse date {date_str}: {e}, using current time")
+                return datetime.utcnow()
         
-        # Determine status (Bitbucket PRs are typically merged when this function is called)
-        status = "merged"  # Bitbucket webhook for PR merge events
+        # Use closed_date for closed/merged PRs, created_on for opened
+        if closed_date_str:
+            date = parse_date(closed_date_str)
+        elif created_at_str:
+            date = parse_date(created_at_str)
+        else:
+            date = datetime.utcnow()
+        
+        updated_at = parse_date(updated_at_str) if updated_at_str else date
         
         pr_merge_model = PRMerge(
             pr_number=pr_number,
@@ -314,15 +336,18 @@ async def process_bitbucket_pr_merge(
             status=status,
             created_by=created_by_name,
             created_by_email=created_by_email,
+            repository_name=repo_name,
+            repository_url=repo_url,
+            date=date,
+            updated_at=updated_at,
+            installation_id=workspace_id,
+            source="bitbucket",
             merge_commit_hash=merge_commit_hash_short,
             merged_by=merged_by_name,
             merged_by_email=merged_by_email,
-            repository_name=repo_name,
-            repository_url=repo_url,
-            date=merge_date,
-            updated_at=merge_date,
-            installation_id=workspace_id,
-            source="bitbucket",
+            branch=branch,
+            additions=additions,
+            deletions=deletions,
         )
         
         result = await process_pr_ch(
@@ -334,5 +359,5 @@ async def process_bitbucket_pr_merge(
         return result
         
     except Exception as e:
-        logger.error(f"Error processing Bitbucket PR merge {pr_data.get('id', 'unknown')}: {e}", exc_info=True)
+        logger.error(f"Error processing Bitbucket PR {pr_data.get('id', 'unknown')}: {e}", exc_info=True)
         return None
