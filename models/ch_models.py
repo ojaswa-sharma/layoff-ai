@@ -9,7 +9,7 @@ from sqlalchemy.orm import column_property
 from dependencies.ch_db import Base
 from sqlalchemy.sql import literal_column
 from clickhouse_sqlalchemy import engines
-from clickhouse_sqlalchemy.types import LowCardinality, String, AggregateFunction, UInt64, Int64
+from clickhouse_sqlalchemy.types import LowCardinality, String, AggregateFunction, UInt64, Int64, UInt8
 from datetime import datetime, timezone
 
 
@@ -332,3 +332,51 @@ class RepositoryTechStackCH(Base):
             last_updated=data.get("last_updated") or datetime.now(timezone.utc),
             source=data.get("source") or "github",
         )
+
+
+class BranchRawCH(Base):
+    __tablename__ = "branches_raw"
+
+    __table_args__ = (
+        engines.MergeTree(
+            order_by=("repository_full_name", "branch_name"),
+            partition_by=text("toYYYYMM(fetched_at)")
+        ),
+    )
+
+    repository_full_name = Column(LowCardinality(String), primary_key=True)
+    branch_name = Column(LowCardinality(String), primary_key=True)
+
+    base_branch = Column(LowCardinality(String), nullable=True)
+    commit_sha = Column(String, nullable=False)
+    commit_date = Column(DateTime, nullable=False)
+
+    ahead_by = Column(Int64, nullable=True)
+    behind_by = Column(Int64, nullable=True)
+
+    is_protected = Column(UInt8, default=0)
+    installation_id = Column(UInt64, nullable=False)
+
+    fetched_at = Column(DateTime, default=datetime.utcnow)
+
+
+class UserBranchAggregateCH(Base):
+    __tablename__ = "user_branch_agg"
+
+    __table_args__ = (
+        engines.AggregatingMergeTree(
+            order_by=("email", "repository_full_name", "branch_name"),
+        ),
+    )
+
+    email = Column(LowCardinality(String), primary_key=True)
+    repository_full_name = Column(LowCardinality(String), primary_key=True)
+    branch_name = Column(LowCardinality(String), primary_key=True)
+
+    commit_count = Column(AggregateFunction("count", UInt64))
+    last_commit_date = Column(AggregateFunction("max", DateTime))
+    total_additions = Column(AggregateFunction("sum", UInt64))
+    total_deletions = Column(AggregateFunction("sum", UInt64))
+
+    last_pr_status = Column(AggregateFunction("anyLast", String))
+    last_seen = Column(DateTime)
