@@ -230,11 +230,11 @@ STRICT COMPLIANCE IS REQUIRED AT ALL TIMES.
                 await asyncio.sleep(60)
 
     return {
-        "commit_summmary" : resp.output_parsed.commit_summary,
-        "work_category" : resp.output_parsed.work_category.value,
-        "department" : resp.output_parsed.department.value,
-        "commiters_performance" : resp.output_parsed.commiters_performance,
-        "work_type" : resp.output_parsed.work_type.value
+        "commit_summmary" : "Failed",
+        "work_category" : "Failed",
+        "department" : "Failed",
+        "commiters_performance" : "Failed",
+        "work_type" : "Failed"
     }
 
 
@@ -257,14 +257,17 @@ async def summarize_and_upload(diff_text, name, mail, repo_name, commit_title, d
     {diff.get("commiters_performance")}
     """)
         print(f"[DEBUG] Extraction successful, moving to db and zep")
-        await graphiti.add_message(user_id = f"user_{mail}", message=msg, thread_id=repo_name, first_name=name, email=mail, repo_name=repo_name, date=commit_date)
+        if diff.get("work_type") != "Failed":
+            await graphiti.add_message(user_id = f"user_{mail}", message=msg, thread_id=repo_name, first_name=name, email=mail, repo_name=repo_name, date=commit_date)
         if not db:
             db = get_ch_session_direct()
             created_session = True
             
         _ = await asyncio.to_thread(insert_commit_analysis_ch, db, diff, commit_hash, mail, repo_name)
         print(f"[CLICKHOUSE] Added to clickhouse")
-        await graphiti.add_to_graph(graph_id=f"{mail}_{repo_name}", message=msg.content, commit_hash=commit_hash, commit_date = commit_date)
+
+        if diff.get("work_type") != "Failed":
+            await graphiti.add_to_graph(graph_id=f"{mail}_{repo_name}", message=msg.content, commit_hash=commit_hash, commit_date = commit_date)
     except Exception as e:
         print(f"[ERROR] Something went wrong during summarization : {e}")
     finally:
