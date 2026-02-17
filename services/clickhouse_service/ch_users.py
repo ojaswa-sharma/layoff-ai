@@ -348,23 +348,22 @@ async def get_developer_ch(
 
         commits_sql = text(f"""
             SELECT
-                c.commit_hash,
-                c.message          AS commit_title,
-                c.date             AS commit_date,
-                c.repository_name,
-                c.changes,
-                ca.department,
-                ca.work_type,
-                ca.work_category,
-                ca.commiters_performance AS performance,
-                ca.commit_summary
-            FROM commits c
-            LEFT JOIN commit_analysis ca
-                ON  c.commit_hash = ca.commit_hash
-                AND ca.email      = :email
-            WHERE c.email = :email
-              AND (:project = '' OR c.repository_name = :project)
-            ORDER BY c.date DESC
+                commit_hash,
+                commit_title,
+                commit_date,
+                repo_name                                       AS repository_name,
+                additions,
+                deletions,
+                department,
+                work_type,
+                work_category,
+                commiters_performance                           AS performance,
+                commit_summary,
+                count() OVER ()                                 AS total_filtered_commits
+            FROM commit_analysis
+            WHERE email = :email
+              AND (:project = '' OR repo_name = :project)
+            ORDER BY commit_date DESC
             LIMIT {limit} OFFSET {offset}
         """)
 
@@ -386,45 +385,38 @@ async def get_developer_ch(
         """)
 
         projects_sql = text("""
-            SELECT
-                repo_name,
-                commit_count,
-                last_commit,
-                sum(commit_count) OVER () AS total_commits
-            FROM (
-                SELECT
-                    repo_name,
-                    countMerge(commit_count)   AS commit_count,
-                    maxMerge(last_commit_date) AS last_commit
-                FROM user_repo_agg
-                WHERE email = :email
-                  AND (:project = '' OR repo_name = :project)
-                GROUP BY repo_name
-            )
-            ORDER BY last_commit DESC
-        """)
+                    SELECT
+                        repo_name,
+                        commit_count,
+                        last_commit,
+                        sum(commit_count) OVER () AS total_commits
+                    FROM (
+                        SELECT
+                            repo_name,
+                            countMerge(commit_count)   AS commit_count,
+                            maxMerge(last_commit_date) AS last_commit
+                        FROM user_repo_agg
+                        WHERE email = :email
+                        GROUP BY repo_name
+                    )
+                    ORDER BY last_commit DESC
+                """)
 
-        commit_rows  = (await run_in_threadpool(session.execute, commits_sql,  {"email": email, "project": project_filter})).fetchall()
-        stats_row    = (await run_in_threadpool(session.execute, stats_sql,    {"email": email})).fetchone()
-        project_rows = (await run_in_threadpool(session.execute, projects_sql, {"email": email, "project": project_filter})).fetchall()
+        commit_rows = [
+            row._mapping
+            for row in (await run_in_threadpool(session.execute, commits_sql, {"email": email, "project": project_filter})).fetchall()
+        ]
+        stats_row = (await run_in_threadpool(session.execute, stats_sql, {"email": email})).fetchone()
+        project_rows = (await run_in_threadpool(session.execute, projects_sql, {"email": email})).fetchall()
 
-        if not commit_rows:
+        if not commit_rows and not project_rows:
             return {
-                "projects":       [],
-                "stats":          {"departments": {}, "work_types": {}, "real_vs_fake": {}, "commit_hours": {}, "total_commits": 0},
-                "pagination":     {"page": page, "limit": limit},
-                "commit_history": [],
+                "projects":            [],
+                "stats":               {"departments": {}, "work_types": {}, "real_vs_fake": {}, "commit_hours": {}, "total_commits": 0},
+                "pagination":          {"page": page, "limit": limit, "total_commits": 0},
+                "commit_history":      [],
                 "commits_per_project": {},
             }
-
-        s = stats_row._mapping if stats_row else {}
-        stats = {
-            "total_commits": project_rows[0].total_commits if project_rows else 0,
-            "departments":   dict(s.get("departments",  [])),
-            "work_types":    dict(s.get("work_types",   [])),
-            "real_vs_fake":  dict(s.get("real_vs_fake", [])),
-            "commit_hours":  dict(s.get("commit_hours", [])),
-        }
 
         projects_list = [
             {
@@ -437,6 +429,15 @@ async def get_developer_ch(
 
         commits_per_project = {r.repo_name: r.commit_count for r in project_rows}
 
+        s = stats_row._mapping if stats_row else {}
+        stats = {
+            "total_commits": project_rows[0].total_commits if project_rows else 0,
+            "departments":   dict(s.get("departments",  [])),
+            "work_types":    dict(s.get("work_types",   [])),
+            "real_vs_fake":  dict(s.get("real_vs_fake", [])),
+            "commit_hours":  dict(s.get("commit_hours", [])),
+        }
+
         commit_history = [
             {
                 "commit_hash":     r["commit_hash"],
@@ -447,17 +448,17 @@ async def get_developer_ch(
                 "work_type":       r["work_type"],
                 "work_category":   r["work_category"],
                 "performance":     r["performance"],
-                **_parse_changes_json(r["changes"]),
+                "additions":       r["additions"],
+                "deletions":       r["deletions"],
                 "commit_summary":  r["commit_summary"],
             }
-            for row in commit_rows
-            for r in (row._mapping,)
+            for r in commit_rows
         ]
 
         return {
             "projects":            projects_list,
             "stats":               stats,
-            "pagination":          {"page": page, "limit": limit},
+            "pagination":          {"page": page, "limit": limit, "total_commits": commit_rows[0]["total_filtered_commits"] if commit_rows else 0},
             "commit_history":      commit_history,
             "commits_per_project": commits_per_project,
         }
