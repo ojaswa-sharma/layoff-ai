@@ -4,14 +4,13 @@ SQLAlchemy declarative models for ClickHouse tables.
 
 import json
 from typing import Dict, Any
-from sqlalchemy import Column, Integer, DateTime, text, Computed
+from sqlalchemy import Column, Integer, DateTime, text
 from sqlalchemy.orm import column_property
 from dependencies.ch_db import Base
 from sqlalchemy.sql import literal_column
 from clickhouse_sqlalchemy import engines
-from clickhouse_sqlalchemy.types import LowCardinality, String, AggregateFunction, UInt64, Int64, Enum8
+from clickhouse_sqlalchemy.types import LowCardinality, String, AggregateFunction, UInt64, Int64
 from datetime import datetime, timezone
-import enum
 
 
 class CommitCH(Base):
@@ -82,33 +81,48 @@ class PRMergeCH(Base):
     __tablename__ = "pr_merges"
 
     __table_args__ = (
-        engines.MergeTree(
-            order_by=("repository_url", "merge_commit_hash", "installation_id"),
+        engines.ReplacingMergeTree(
+            "updated_at",
+            order_by=("repository_url", "pr_number", "installation_id"),
         ),
     )
 
     repository_url = Column(String, primary_key=True)
-    merge_commit_hash = Column(String, primary_key=True)
+    pr_number = Column(Integer, primary_key=True)
     installation_id = Column(Integer, primary_key=True)
 
-    pr_number = Column(Integer, nullable=False)
     pr_title = Column(String, nullable=False)
-    merged_by = Column(LowCardinality(String), nullable=False)
-    merged_by_email = Column(LowCardinality(String), nullable=False)
+    status = Column(LowCardinality(String), nullable=False)  # "open", "closed", "merged"
+    created_by = Column(LowCardinality(String), nullable=False)  # PR creator username
+    created_by_email = Column(LowCardinality(String), nullable=False)  # PR creator email
+    merge_commit_hash = Column(String, nullable=True)  # Nullable for opened PRs
+    merged_by = Column(LowCardinality(String), nullable=True)  # Nullable for opened PRs
+    merged_by_email = Column(LowCardinality(String), nullable=True)  # Nullable for opened PRs
     repository_name = Column(LowCardinality(String), nullable=False)
-    date = Column(DateTime, nullable=False)
+    branch = Column(LowCardinality(String), nullable=True)  # Source branch name
+    additions = Column(Int64, nullable=True)  # Lines added
+    deletions = Column(Int64, nullable=True)  # Lines removed
+    date = Column(DateTime, nullable=False)  # Created/merged date
+    updated_at = Column(DateTime, nullable=False)  # Last update timestamp
     source = Column(String, nullable=False)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "pr_number": self.pr_number,
             "pr_title": self.pr_title,
+            "status": self.status,
+            "created_by": self.created_by,
+            "created_by_email": self.created_by_email,
             "merge_commit_hash": self.merge_commit_hash,
             "merged_by": self.merged_by,
             "merged_by_email": self.merged_by_email,
             "repository_name": self.repository_name,
             "repository_url": self.repository_url,
+            "branch": self.branch,
+            "additions": self.additions,
+            "deletions": self.deletions,
             "date": self.date,
+            "updated_at": self.updated_at,
             "installation_id": self.installation_id,
             "source": self.source,
         }
@@ -118,12 +132,19 @@ class PRMergeCH(Base):
         return cls(
             pr_number=pr_merge.pr_number,
             pr_title=pr_merge.pr_title,
-            merge_commit_hash=pr_merge.merge_commit_hash,
-            merged_by=pr_merge.merged_by,
-            merged_by_email=pr_merge.merged_by_email,
+            status=pr_merge.status,
+            created_by=pr_merge.created_by,
+            created_by_email=pr_merge.created_by_email,
+            merge_commit_hash=getattr(pr_merge, 'merge_commit_hash', None),
+            merged_by=getattr(pr_merge, 'merged_by', None),
+            merged_by_email=getattr(pr_merge, 'merged_by_email', None),
             repository_name=pr_merge.repository_name,
             repository_url=pr_merge.repository_url,
+            branch=getattr(pr_merge, 'branch', None),
+            additions=getattr(pr_merge, 'additions', None),
+            deletions=getattr(pr_merge, 'deletions', None),
             date=pr_merge.date,
+            updated_at=getattr(pr_merge, 'updated_at', pr_merge.date),
             installation_id=pr_merge.installation_id,
             source=pr_merge.source,
         )
