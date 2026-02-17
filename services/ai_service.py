@@ -216,7 +216,8 @@ STRICT COMPLIANCE IS REQUIRED AT ALL TIMES.
             ],
             text_format=CommitDetails,
         )
-        if resp.error and resp.error.code == "rate_limit_exceeded":
+        print(resp.error)
+        if resp.error and resp.error.code in["" ,"rate_limit_exceeded"]:
             print(f"[TOKEN] OpenAI credits are out, currently at retry : {_retry}")
             await asyncio.sleep(60)
         else:
