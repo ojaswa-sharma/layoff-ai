@@ -1,5 +1,6 @@
 # from openai import AsyncOpenAI
 from langfuse.openai import AsyncOpenAI
+from openai import APIStatusError
 import os
 from models.commits import CommitDetails
 from models.graphiti_input import botMessage
@@ -204,24 +205,19 @@ NEVER DO THE FOLLOWING:
 STRICT COMPLIANCE IS REQUIRED AT ALL TIMES.
     """
     for _retry in range(int(os.getenv("OPENAI_RETRIES", 30))):
-        resp = await openai.responses.parse(
-            model="gpt-5-nano",
-            reasoning={"effort" : "minimal"},
-            input=[
-                {"role": "system", "content": system_prompt},
-                {
-                    "role": "user",
-                    "content": user_prompt,
-                },
-            ],
-            text_format=CommitDetails,
-        )
-        print(resp.error)
-        if resp.error and resp.error.code in["" ,"rate_limit_exceeded"]:
-            print(f"[TOKEN] OpenAI credits are out, currently at retry : {_retry}")
-            await asyncio.sleep(60)
-        else:
-            print(resp.usage)
+        try:
+            resp = await openai.responses.parse(
+                model="gpt-5-nano",
+                reasoning={"effort" : "minimal"},
+                input=[
+                    {"role": "system", "content": system_prompt},
+                    {
+                        "role": "user",
+                        "content": user_prompt,
+                    },
+                ],
+                text_format=CommitDetails,
+            )
             return {
                 "commit_summmary" : resp.output_parsed.commit_summary,
                 "work_category" : resp.output_parsed.work_category.value,
@@ -229,6 +225,10 @@ STRICT COMPLIANCE IS REQUIRED AT ALL TIMES.
                 "commiters_performance" : resp.output_parsed.commiters_performance,
                 "work_type" : resp.output_parsed.work_type.value
             }
+        except APIStatusError as e:
+            if e.status_code == 429:
+                pass
+
     return {
         "commit_summmary" : resp.output_parsed.commit_summary,
         "work_category" : resp.output_parsed.work_category.value,
