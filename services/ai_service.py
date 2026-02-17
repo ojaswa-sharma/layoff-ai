@@ -238,12 +238,18 @@ STRICT COMPLIANCE IS REQUIRED AT ALL TIMES.
     }
 
 
-async def summarize_and_upload(diff_text, name, mail, repo_name, commit_title, db = None, commit_hash = None, commit_date = None):
+async def summarize_and_upload(diff_text, name, mail, repo_name, commit_title, db = None, commit_hash = None, commit_date = None, additions = 0, deletions = 0):
     created_session = False
     try:
         if isinstance(commit_date, str):
             commit_date = datetime.fromisoformat(commit_date)
         diff = await summarie_diff(get_openai(), diff_text, name, mail, repo_name, commit_title)
+        diff["commit_hash"]  = commit_hash
+        diff["commit_title"] = commit_title
+        diff["commit_date"]  = commit_date
+        diff["additions"]    = additions
+        diff["deletions"]    = deletions
+
         graphiti = get_graphitit_personalizer()
         msg = botMessage(role="norole", content=f"""
     Repository: {repo_name}

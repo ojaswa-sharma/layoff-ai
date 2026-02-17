@@ -13,8 +13,8 @@ from sqlalchemy import func
 from models.commits import Commit, SyncStatus
 from models.ch_models import CommitCH, RepoSyncEventCH, PRMergeCH
 from services.git_diff import fetch_diff_from_webhook, fetch_bitbucket_diff, count_diff_stats
-from services.ai_service import summarize_and_upload
-from services.background_worker import get_worker_manager
+# from services.ai_service import summarize_and_upload
+# from services.background_worker import get_worker_manager
 from services.kafka.kafka_store import get_kafka_producer
 
 logger = logging.getLogger(__name__)
@@ -289,7 +289,7 @@ async def process_commit_from_webhook(
                 commit_date = datetime.utcnow()
         else:
             commit_date = datetime.utcnow()
-        
+        changes = count_diff_stats(diff_text=diff_text) if diff_text else None
         commit_model = Commit(
             commit_hash=commit_hash,
             message=commit_data.get("message", ""),
@@ -299,7 +299,7 @@ async def process_commit_from_webhook(
             repository_name=repo_name,
             repository_url=repo_url,
             installation_id=installation_id,
-            changes=count_diff_stats(diff_text=diff_text) if diff_text else None,
+            changes=changes,
         )
         
         success = await insert_commit_ch(session, commit_model)
@@ -318,7 +318,9 @@ async def process_commit_from_webhook(
                     commit_model.message, 
                     None, 
                     commit_hash, 
-                    commit_date
+                    commit_date,
+                    changes.get("additions"),
+                    changes.get("deletions")
                 ]
             )
             
@@ -422,7 +424,7 @@ async def process_bitbucket_commit_from_webhook(
         message = commit_data.get("message", "")
         if "\n" in message:
             message = message.split("\n")[0]
-        
+        changes = count_diff_stats(diff_text=diff_text) if diff_text else None
         commit_model = Commit(
             commit_hash=commit_hash,
             message=message,
@@ -432,7 +434,7 @@ async def process_bitbucket_commit_from_webhook(
             repository_name=repo_name,
             repository_url=repo_url,
             installation_id=workspace_id,
-            changes=count_diff_stats(diff_text=diff_text) if diff_text else None,
+            changes=changes,
         )
         
         success = await insert_commit_ch(session, commit_model)
@@ -451,7 +453,9 @@ async def process_bitbucket_commit_from_webhook(
                     commit_model.message, 
                     None, 
                     commit_hash, 
-                    commit_date
+                    commit_date,
+                    changes.get("additions"),
+                    changes.get("deletions")
                 ]
             )
         
