@@ -2,6 +2,19 @@ import asyncio
 from services.kafka.background_kafka_consuer import BackgroundKafkaConsumer
 import os
 from dotenv import load_dotenv
+import warnings
+import gc
+
+warnings.filterwarnings(
+    "ignore",
+    message="Pydantic serializer warnings:",
+)
+warnings.filterwarnings(
+    "ignore",
+    message="Invalid duplicate_name",
+)
+
+
 
 load_dotenv()
 
@@ -9,8 +22,18 @@ async def main():
     consumer = BackgroundKafkaConsumer()
     await consumer.startup()
     try:
+        count = 0
         while True:
             await asyncio.sleep(1)
+            # free = await consumer._get_semaphore()
+            # if free == 5:
+            #     if count < 5:
+            #         count += 1
+            #     else:
+            #         continue
+            # else:
+            #     count = 0
+            # print(f"[SEMAPHORE] : CURRENT SEMAPHORE COUNT : {free}\n[GC] GC COUNT : {len(gc.get_objects())}")
     except KeyboardInterrupt:
         print("[SHUTDOWN] Received exit signal")
     finally:
