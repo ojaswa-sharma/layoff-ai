@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from dependencies.ch_db import get_ch_session
 from services.clickhouse_service.ch_users import list_users_ch, list_users_paginated_ch, get_developer_ch
-from services.clickhouse_service.ch_tech_stack import get_tech_stack_ch
 from services.graphiti.graphiti_store import get_graphitit_personalizer
 from fastapi.responses import ORJSONResponse
 import logging

@@ -272,8 +272,8 @@ async def summarize_and_upload(diff_text, name, mail, repo_name, commit_title, d
         _ = await asyncio.to_thread(insert_commit_analysis_ch, db, diff, commit_hash, mail, repo_name)
         print(f"[CLICKHOUSE] Added to clickhouse")
 
-        if diff.get("work_type") != "Failed":
-            await graphiti.add_to_graph(graph_id=f"{mail}_{repo_name}", message=msg.content, commit_hash=commit_hash, commit_date = commit_date)
+        # if diff.get("work_type") != "Failed":
+        #     await graphiti.add_to_graph(graph_id=f"{mail}_{repo_name}", message=msg.content, commit_hash=commit_hash, commit_date = commit_date)
     except Exception as e:
         print(f"[ERROR] Something went wrong during summarization : {e}")
     finally:

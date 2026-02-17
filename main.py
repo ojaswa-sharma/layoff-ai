@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import _all, users_router
+from routers import users_router
 from contextlib import asynccontextmanager
 # from services.db import init_mongo
 from dotenv import load_dotenv

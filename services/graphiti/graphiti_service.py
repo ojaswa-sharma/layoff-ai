@@ -90,7 +90,7 @@ class Personalizer:
         # print(f"[DEBUG] ADDING TEXT : {text[:100]}...")
         # await self._client.add_episode(user_id=user_id, data = text[:min(len(text), 9999)], type="text", source_description="Data from github summarized by ai")
         await self._client.add_episode(
-            name=f"commit_data__{datetime.now().timestamp()}",
+            name=f"commit_data__{user_id}__{datetime.now().timestamp()}",
             episode_body=text,
             source=EpisodeType.text,
             source_description=f"Commit tracked",
@@ -132,21 +132,3 @@ class Personalizer:
 
     async def get_user_persona(self, user_id):
         return "TBD"
-        # try:
-        #     print(f"[DEBUG] Getting persona for user_id: {user_id}")
-        #     user_node = await self.zep_conn.user.get_node(user_id=user_id)
-        #     print(f"[DEBUG] User node response: {user_node}")
-        #     print(f"[DEBUG] User node type: {type(user_node)}")
-            
-        #     if user_node and hasattr(user_node, 'node') and user_node.node:
-        #         print(f"[DEBUG] User node.node: {user_node.node}")
-        #         print(f"[DEBUG] User node.node.summary: {user_node.node.summary}")
-        #         return user_node.node.summary or ""
-        #     else:
-        #         print(f"[DEBUG] No valid node found in response")
-        #         return ""
-        # except Exception as e:
-        #     print(f"[ERROR] Error getting user persona: {e}")
-        #     import traceback
-        #     traceback.print_exc()
-        #     return ""
