@@ -227,7 +227,7 @@ STRICT COMPLIANCE IS REQUIRED AT ALL TIMES.
             }
         except APIStatusError as e:
             if e.status_code == 429:
-                pass
+                await asyncio.sleep(60)
 
     return {
         "commit_summmary" : resp.output_parsed.commit_summary,
