@@ -203,7 +203,7 @@ NEVER DO THE FOLLOWING:
 
 STRICT COMPLIANCE IS REQUIRED AT ALL TIMES.
     """
-    for _ in range(int(os.getenv("OPENAI_RETRIES", 30))):
+    for _retry in range(int(os.getenv("OPENAI_RETRIES", 30))):
         resp = await openai.responses.parse(
             model="gpt-5-nano",
             reasoning={"effort" : "minimal"},
@@ -216,10 +216,11 @@ STRICT COMPLIANCE IS REQUIRED AT ALL TIMES.
             ],
             text_format=CommitDetails,
         )
-        print(resp.usage)
         if resp.error and resp.error.code == "rate_limit_exceeded":
+            print(f"[TOKEN] OpenAI credits are out, currently at retry : {_retry}")
             await asyncio.sleep(60)
         else:
+            print(resp.usage)
             return {
                 "commit_summmary" : resp.output_parsed.commit_summary,
                 "work_category" : resp.output_parsed.work_category.value,
