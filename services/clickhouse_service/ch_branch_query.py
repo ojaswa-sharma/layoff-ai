@@ -24,7 +24,7 @@ async def get_user_branches(
     This function:
     1. Queries user_branch_agg with FINAL for deduplication
     2. Uses finalizeAggregation for aggregate functions
-    3. Returns only branch_name, repository_full_name, commit_count, and last_commit_date
+    3. Returns branch_name, repository_full_name, commit_count, last_commit_date, total_additions, and total_deletions
     
     Args:
         session: SQLAlchemy session
@@ -34,7 +34,7 @@ async def get_user_branches(
         
     Returns:
         Dictionary with:
-        - branches: List of branch data (branch_name, repository_full_name, commit_count, last_commit_date)
+        - branches: List of branch data (branch_name, repository_full_name, commit_count, last_commit_date, total_additions, total_deletions)
         - pagination: Pagination metadata
     """
     try:
@@ -46,7 +46,9 @@ async def get_user_branches(
                 uba.repository_full_name,
                 uba.branch_name,
                 finalizeAggregation(uba.commit_count) AS commit_count,
-                finalizeAggregation(uba.last_commit_date) AS last_commit_date
+                finalizeAggregation(uba.last_commit_date) AS last_commit_date,
+                finalizeAggregation(uba.total_additions) AS total_additions,
+                finalizeAggregation(uba.total_deletions) AS total_deletions
             FROM user_branch_agg AS uba FINAL
             WHERE uba.email = :email
             ORDER BY last_commit_date DESC
@@ -70,6 +72,8 @@ async def get_user_branches(
                 "repository_full_name": row.repository_full_name,
                 "commit_count": row.commit_count or 0,
                 "last_commit_date": row.last_commit_date.isoformat() if row.last_commit_date else None,
+                "total_additions": row.total_additions or 0,
+                "total_deletions": row.total_deletions or 0,
             })
         
         # Get total count for pagination
