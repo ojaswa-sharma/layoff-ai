@@ -22,6 +22,8 @@ def init_graphiti():
             api_key=api_key,
             model="gpt-5-nano",
             temperature=1.0,
+            small_model="gpt-5-nano"
+
         )
     )
 
@@ -37,6 +39,7 @@ def init_graphiti():
             api_key=api_key,
             model="gpt-5-nano",
             temperature=1.0,
+            small_model="gpt-5-nano"
         )
     )
 
