@@ -40,20 +40,19 @@ def add_materialized_change_columns(engine):
                 FROM system.tables 
                 WHERE database = 'default' AND name = 'user_repo_agg_mv'
             """))
-            exists = result.fetchone()[0]
-            if exists == 0:
+            if result.fetchone()[0] == 0:
                 conn.execute(text("""
                     CREATE MATERIALIZED VIEW user_repo_agg_mv
                     TO user_repo_agg
                     AS
                     SELECT
                         email,
-                        anyState(author) AS author,
-                        repository_name AS repo_name,
-                        countState() AS commit_count,
+                        anyState(author)    AS author,
+                        repository_name     AS repo_name,
+                        countState()        AS commit_count,
                         sumState(additions) AS total_additions,
                         sumState(deletions) AS total_deletions,
-                        maxState(date) AS last_commit_date
+                        maxState(date)      AS last_commit_date
                     FROM commits
                     GROUP BY email, repo_name
                 """))
@@ -84,30 +83,104 @@ def add_materialized_change_columns(engine):
                     GROUP BY email, repository_name, branch_name
                 """))
             
-            stats_exists = conn.execute(text("""
+            # stats_exists = conn.execute(text("""
+
+            result = conn.execute(text("""
                 SELECT count(*) 
                 FROM system.tables 
                 WHERE database = 'default' AND name = 'mv_user_stats'
             """))
-            stats_exists = stats_exists.fetchone()[0]
-            if stats_exists == 0:
+            if result.fetchone()[0] == 0:
                 conn.execute(text("""
-CREATE MATERIALIZED VIEW default.mv_user_stats
-TO default.user_stats_agg
-AS
-SELECT
-    ca.email,
-    dimension_type,
-    dimension_value,
-    countState() AS cnt_state
-FROM commit_analysis ca
-LEFT JOIN commits c ON ca.commit_hash = c.commit_hash
-ARRAY JOIN
-    ['department', 'work_type', 'work_category', 'commit_hour']                    AS dimension_type,
-    [ca.department, ca.work_type, ca.work_category, toString(toHour(c.date))]      AS dimension_value
-WHERE dimension_value != ''
-GROUP BY ca.email, dimension_type, dimension_value;                
-        """))
+                    CREATE MATERIALIZED VIEW default.mv_user_stats
+                    TO default.user_stats_agg
+                    AS
+                    SELECT
+                        ca.email,
+                        dimension_type,
+                        dimension_value,
+                        countState() AS cnt_state
+                    FROM commit_analysis ca
+                    LEFT JOIN commits c ON ca.commit_hash = c.commit_hash
+                    ARRAY JOIN
+                        ['department', 'work_type', 'work_category', 'commit_hour']               AS dimension_type,
+                        [ca.department, ca.work_type, ca.work_category, toString(toHour(c.date))] AS dimension_value
+                    WHERE dimension_value != ''
+                    GROUP BY ca.email, dimension_type, dimension_value
+                """))
+
+            conn.execute(text("""
+                ALTER TABLE commit_analysis
+                ADD COLUMN IF NOT EXISTS commit_title String
+            """))
+            conn.execute(text("""
+                ALTER TABLE commit_analysis
+                ADD COLUMN IF NOT EXISTS commit_date DateTime
+            """))
+            conn.execute(text("""
+                ALTER TABLE commit_analysis
+                ADD COLUMN IF NOT EXISTS changes String
+            """))
+            conn.execute(text("""
+                ALTER TABLE commit_analysis
+                ADD COLUMN IF NOT EXISTS additions Int32
+            """))
+            conn.execute(text("""
+                ALTER TABLE commit_analysis
+                ADD COLUMN IF NOT EXISTS deletions Int32
+            """))
+
+            needs_backfill = conn.execute(text("""
+                SELECT count(*) FROM commit_analysis WHERE commit_title = ''
+            """)).fetchone()[0]
+
+            if needs_backfill > 0:
+                conn.execute(text("""
+                    INSERT INTO commit_analysis
+                        (commit_hash, email, repo_name, commit_summary, work_category,
+                         department, commiters_performance, work_type,
+                         commit_title, commit_date, additions, deletions)
+                    SELECT
+                        ca.commit_hash,
+                        ca.email,
+                        ca.repo_name,
+                        ca.commit_summary,
+                        ca.work_category,
+                        ca.department,
+                        ca.commiters_performance,
+                        ca.work_type,
+                        c.message                              AS commit_title,
+                        c.date                                 AS commit_date,
+                        JSONExtractInt(c.changes, 'additions') AS additions,
+                        JSONExtractInt(c.changes, 'deletions') AS deletions
+                    FROM commit_analysis ca
+                    JOIN commits c ON ca.commit_hash = c.commit_hash
+                    WHERE ca.commit_title = ''
+                """))
+
+                conn.execute(text("""
+                    ALTER TABLE commit_analysis
+                    DELETE WHERE commit_title = ''
+                """))
+
+            # author_exists = conn.execute(text("""
+            #     SELECT count(*) 
+            #     FROM system.tables 
+            #     WHERE database = 'default' AND name = 'user_author_lookup_mv'
+            # """))
+            # author_exists = author_exists.fetchone()[0]
+
+            # if author_exists == 0:
+            #     conn.execute(text("""
+            #     CREATE MATERIALIZED VIEW IF NOT EXISTS user_author_lookup_mv
+            #     TO user_author_lookup
+            #     AS
+            #     SELECT
+            #         email,
+            #         author,
+            #         now() AS updated_at
+            #     FROM commits;
+            # """))
 
         logger.info("Materialized columns and view ensured successfully")
     except Exception as e:

@@ -163,41 +163,55 @@ class CommitAnalysisCH(Base):
         ),
     )
 
-    commit_hash = Column(String, primary_key=True)
-    email = Column(LowCardinality(String), primary_key=True)
-    repo_name = Column(LowCardinality(String), primary_key=True)
+    commit_hash           = Column(String,                 primary_key=True)
+    email                 = Column(LowCardinality(String), primary_key=True)
+    repo_name             = Column(LowCardinality(String), primary_key=True)
 
-    commit_summary = Column(String, nullable=False)
-    work_category = Column(String, nullable=False)
-    department = Column(String, nullable=False)
-    commiters_performance = Column(String, nullable=False)
-    work_type = Column(String, nullable=False)
+    commit_summary        = Column(String,   nullable=False)
+    work_category         = Column(String,   nullable=False)
+    department            = Column(String,   nullable=False)
+    commiters_performance = Column(String,   nullable=False)
+    work_type             = Column(String,   nullable=False)
+
+    commit_title          = Column(String,   nullable=True)
+    commit_date           = Column(DateTime, nullable=True)
+    changes               = Column(String,   nullable=True)
+    additions             = Column(Integer,  nullable=True)
+    deletions             = Column(Integer,  nullable=True)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            "commit_hash": self.commit_hash,
-            "mail": self.email,
-            "repo_name": self.repo_name,
-            "commit_summmary": self.commit_summary,
-            "work_category": self.work_category,
-            "department": self.department,
-            "commiters_performance": self.commiters_performance,
-            "work_type": self.work_type,
+            "commit_hash":          self.commit_hash,
+            "mail":                 self.email,
+            "repo_name":            self.repo_name,
+            "commit_summmary":      self.commit_summary,
+            "work_category":        self.work_category,
+            "department":           self.department,
+            "commiters_performance":self.commiters_performance,
+            "work_type":            self.work_type,
+            "commit_title":         self.commit_title,
+            "commit_date":          self.commit_date,
+            "additions":            self.additions,
+            "deletions":            self.deletions,
         }
 
     @classmethod
     def from_dict(cls, analysis_dict: Dict[str, Any], session=None):
         return cls(
-            commit_hash=analysis_dict.get("commit_hash", ""),
-            email=analysis_dict.get("mail") or analysis_dict.get("email", ""),
-            repo_name=analysis_dict.get("repo_name", ""),
-            commit_summary=analysis_dict.get("commit_summmary", ""),
-            work_category=analysis_dict.get("work_category", ""),
-            department=analysis_dict.get("department", ""),
-            commiters_performance=analysis_dict.get("commiters_performance", ""),
-            work_type=analysis_dict.get("work_type", ""),
+            commit_hash=           analysis_dict.get("commit_hash", ""),
+            email=                 analysis_dict.get("mail") or analysis_dict.get("email", ""),
+            repo_name=             analysis_dict.get("repo_name", ""),
+            commit_summary=        analysis_dict.get("commit_summmary", ""),
+            work_category=         analysis_dict.get("work_category", ""),
+            department=            analysis_dict.get("department", ""),
+            commiters_performance= analysis_dict.get("commiters_performance", ""),
+            work_type=             analysis_dict.get("work_type", ""),
+            commit_title=          analysis_dict.get("commit_title", ""),
+            commit_date=           analysis_dict.get("commit_date"),
+            changes=               analysis_dict.get("changes", ""),
+            additions=             analysis_dict.get("additions", 0),
+            deletions=             analysis_dict.get("deletions", 0),
         )
-
 
 class RepoSyncEventCH(Base):
     __tablename__ = "repo_sync_events"

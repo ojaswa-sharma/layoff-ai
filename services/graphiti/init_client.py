@@ -6,9 +6,10 @@ from graphiti_core.cross_encoder.openai_reranker_client import OpenAIRerankerCli
 import os
 
 graphiti_client = None
+_driver = None
 
 def init_graphiti():
-    global graphiti_client
+    global graphiti_client, _driver
     if graphiti_client:
         return
 
@@ -21,6 +22,8 @@ def init_graphiti():
             api_key=api_key,
             model="gpt-5-nano",
             temperature=1.0,
+            small_model="gpt-5-nano"
+
         )
     )
 
@@ -36,6 +39,7 @@ def init_graphiti():
             api_key=api_key,
             model="gpt-5-nano",
             temperature=1.0,
+            small_model="gpt-5-nano"
         )
     )
 
@@ -55,3 +59,8 @@ def get_graphiti():
     if not graphiti_client:
         init_graphiti()
     return graphiti_client
+
+def get_driver():
+    if not _driver:
+        init_graphiti()
+    return _driver
