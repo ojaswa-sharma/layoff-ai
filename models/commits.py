@@ -35,7 +35,8 @@ class Commit(BaseModel):
     repository_url: str
     diff: Optional[str] = None
     installation_id : Optional[int] = None
-    changes : Optional[dict]
+    changes : Optional[dict] = None
+    branch_name: Optional[str] = None
 
 class WorkCategory(Enum):
     real : str = "real"
@@ -56,17 +57,24 @@ class WorkType(Enum):
     other : str = "other"
 
 class PRMerge(BaseModel):
-    """PR merge event - separate from regular commits, no diff/changes tracking"""
+    """PR event - tracks all PR states (opened, closed, merged) with metadata"""
     pr_number: int
     pr_title: str
-    merge_commit_hash: str
-    merged_by: str
-    merged_by_email: str
+    status: str  # "open", "closed", "merged"
+    created_by: str  # PR creator username
+    created_by_email: str  # PR creator email
     repository_name: str
     repository_url: str
-    date: datetime
+    date: datetime  # Created date for opened, merged_at for merged
+    updated_at: datetime  # Last update timestamp
     installation_id: int
     source: str  # "github" or "bitbucket"
+    merge_commit_hash: Optional[str] = None  # Only for merged PRs
+    merged_by: Optional[str] = None  # Only for merged PRs
+    merged_by_email: Optional[str] = None  # Only for merged PRs
+    branch: Optional[str] = None  # Source branch name
+    additions: Optional[int] = None  # Lines added
+    deletions: Optional[int] = None  # Lines removed
 
 
 class CommitDetails(BaseModel):

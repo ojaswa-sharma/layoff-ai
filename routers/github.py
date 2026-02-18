@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from models.commits import SyncStatus
 from services.clickhouse_service.ch_commit_processor import process_commit_from_webhook
 from services.clickhouse_service.ch_commit_processor import check_commit_exists_ch
+from services.clickhouse_service.ch_commit_processor import update_branch_raw_from_commit
 from services.clickhouse_service.ch_pr_merge_processor import process_github_pr_merge
 from services.clickhouse_service.ch_backfill import get_repository_status_ch, update_repository_status_ch, backfill_repository_ch
 from services.tech_stack_service import fetch_github_tech_stack
@@ -74,10 +75,12 @@ async def webhook_github(request: Request, session: Session = Depends(get_ch_ses
                 return {"message": f"Ignoring installation action: {action}"}
         
         if event_type == "pull_request":
+            print(f'[PR] hittttttttttttttttt')
             # print(f'[PR] : {request_data}')
             return await handle_pull_request_event(request_data, session)
         
         if event_type == "push":
+            print(f'[PUSH] hittttttttttttttttt')
             # print(f'[PUSH] : {request_data}')
             return await handle_push_event(request_data, session)
         
@@ -99,32 +102,30 @@ async def webhook_github(request: Request, session: Session = Depends(get_ch_ses
 
 async def handle_pull_request_event(request_data: dict, session: Session):
     """
-    Handle pull_request webhook events - process PR merges separately from commits.
-    
-    Only processes PRs that are merged (action: closed, merged: true).
-    PR merges are stored in pr_merges collection without diff/changes tracking.
+    Handle pull_request webhook events - process all PR states (opened, closed, merged).
     """
     action = request_data.get("action")
     
-    if action != "closed":
+    # Only process opened and closed actions
+    if action not in ["opened", "closed"]:
         return {
-            "message": f"PR action '{action}' not processed (only 'closed' with merged=true)",
+            "message": f"PR action '{action}' not processed (only 'opened' and 'closed' are supported)",
             "action": action,
         }
     
     pr_data = request_data.get("pull_request", {})
-    merged = pr_data.get("merged", False)
+    installation_id = request_data.get("installation", {}).get("id", 123)  # Fallback for testing
+    repo_full_name = request_data.get("repository", {}).get("full_name", "")
+    repo_name = request_data.get("repository", {}).get("name", "")
+    repo_url = request_data.get("repository", {}).get("html_url", "")
     
-    if not merged:
+    if not repo_full_name or not repo_name:
+        logger.warning("Missing repository information in PR webhook")
         return {
-            "message": "PR was closed but not merged, skipping",
+            "message": "Missing repository information",
+            "event_type": "pull_request",
             "action": action,
         }
-    
-    installation_id = request_data["installation"]["id"]
-    repo_full_name = request_data["repository"]["full_name"]
-    repo_name = request_data["repository"]["name"]
-    repo_url = request_data["repository"]["html_url"]
     
     result = await process_github_pr_merge(
         pr_data=pr_data,
@@ -133,23 +134,23 @@ async def handle_pull_request_event(request_data: dict, session: Session):
         repo_url=repo_url,
         installation_id=installation_id,
         session=session,
-        skip_existing=True,
+        skip_existing=False,  # Use upsert logic
     )
     
     if result is None:
         return {
-            "message": "PR merge already exists or failed to process",
+            "message": "PR processing failed",
             "event_type": "pull_request",
             "action": action,
             "pr_number": pr_data.get("number"),
         }
     
     return {
-        "message": "PR merge processed successfully",
+        "message": f"PR {action} processed successfully",
         "event_type": "pull_request",
         "action": action,
         "pr_number": pr_data.get("number"),
-        "merged_by": result.merged_by,
+        "status": result.status,
     }
 
 
@@ -231,6 +232,17 @@ async def handle_push_event(request_data: dict, session: Session):
         processed_count = 0
         skipped_count = 0
         
+        # Extract branch name from ref (format: refs/heads/branch-name)
+        ref = request_data.get("ref", "")
+        branch_name = None
+        if ref.startswith("refs/heads/"):
+            branch_name = ref.replace("refs/heads/", "")
+        elif ref.startswith("refs/"):
+            # Handle other ref types (tags, etc.) - extract branch name if possible
+            parts = ref.split("/")
+            if len(parts) >= 3 and parts[1] == "heads":
+                branch_name = "/".join(parts[2:])
+        
         for commit in request_data.get("commits", []):
 
             # for commit in payload["commits"]:
@@ -265,7 +277,37 @@ async def handle_push_event(request_data: dict, session: Session):
                 private_key_pem=pem_data,
                 session=session,
                 skip_existing=True,
+                branch_name=branch_name,
             )
+
+
+            try:
+                # Extract email and commit_date from commit data
+                commit_email = commit.get("author", {}).get("email", "")
+                timestamp_str = commit.get("timestamp")
+                if timestamp_str:
+                    try:
+                        if timestamp_str.endswith("Z"):
+                            timestamp_str = timestamp_str.replace("Z", "+00:00")
+                        commit_date = datetime.fromisoformat(timestamp_str)
+                    except (ValueError, AttributeError):
+                        commit_date = datetime.utcnow()
+                else:
+                    commit_date = datetime.utcnow()
+                
+                # Update branch_raw table
+                await update_branch_raw_from_commit(
+                    session=session,
+                    email=commit_email,
+                    repository_full_name=repo_full_name,
+                    branch_name=branch_name,
+                    commit_date=commit_date,
+                    installation_id=installation_id,
+                    commit_hash=commit_hash,
+                )
+            except Exception as e:
+                # Log error but don't fail the webhook
+                logger.warning(f"Failed to update branch_raw for commit {commit_hash}: {e}", exc_info=True)
             
             if result is None:
                 skipped_count += 1

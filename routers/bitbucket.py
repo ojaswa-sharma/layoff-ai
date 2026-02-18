@@ -10,12 +10,12 @@ import os
 import asyncio
 from sqlalchemy.orm import Session
 from models.commits import SyncStatus
-from services.clickhouse_service.ch_commit_processor import process_bitbucket_commit_from_webhook, check_commit_exists_ch
+from services.clickhouse_service.ch_commit_processor import process_bitbucket_commit_from_webhook, check_commit_exists_ch, update_branch_raw_from_commit
 from services.clickhouse_service.ch_pr_merge_processor import process_bitbucket_pr_merge
 from services.clickhouse_service.ch_backfill import get_repository_status_ch, update_repository_status_ch
 from services.tech_stack_service import fetch_bitbucket_tech_stack
 from services.clickhouse_service.ch_tech_stack import insert_or_update_tech_stack_ch
-from dependencies.ch_db import get_ch_session, SessionLocal, get_ch_db, get_ch_session_direct
+from dependencies.ch_db import get_ch_session, get_ch_session_direct
 import logging
 from datetime import datetime
 import hashlib
@@ -54,10 +54,6 @@ async def test_token():
 async def webhook_bitbucket(request: Request, session: Session = Depends(get_ch_session)):
     """
     Handle Bitbucket webhook events.
-    
-    Supports:
-    - repo:push: Process commits from push events (real-time)
-    - pullrequest:fulfilled: Process PR merge events (separate from commits)
     """
     try:
         event_type = request.headers.get("X-Event-Key", "repo:push")
@@ -65,9 +61,9 @@ async def webhook_bitbucket(request: Request, session: Session = Depends(get_ch_
         
         request_data = await request.json()
         
-        if event_type == "pullrequest:fulfilled":
-            # print(f"[REQUEST DATA] PR : {request_data}")
-            return await handle_pullrequest_fulfilled_event(request_data, session)
+        # Handle all PR-related events
+        if event_type in ["pullrequest:created", "pullrequest:updated", "pullrequest:fulfilled", "pullrequest:rejected"]:
+            return await handle_pullrequest_event(request_data, session, event_type)
         
         if event_type == "repo:push":
             # print(f"[REQUEST DATA] PUSH : {request_data}")
@@ -86,11 +82,9 @@ async def webhook_bitbucket(request: Request, session: Session = Depends(get_ch_
         raise HTTPException(status_code=500, detail=f"Error processing webhook: {str(e)}")
 
 
-async def handle_pullrequest_fulfilled_event(request_data: dict, session: Session):
+async def handle_pullrequest_event(request_data: dict, session: Session, event_type: str):
     """
-    Handle pullrequest:fulfilled webhook events - process PR merges separately from commits.
-    
-    PR merges are stored in pr_merges collection without diff/changes tracking.
+    Handle all Bitbucket pull request webhook events - process all PR states (created, updated, fulfilled, rejected).
     """
     repository = request_data.get("repository", {})
     repo_full_name = repository.get("full_name", "")
@@ -101,7 +95,7 @@ async def handle_pullrequest_fulfilled_event(request_data: dict, session: Sessio
     workspace_slug = workspace.get("slug", "") or workspace.get("uuid", "")
     
     if not repo_full_name or not workspace_slug:
-        logger.error("Missing repository or workspace info in PR merge webhook payload")
+        logger.error("Missing repository or workspace info in PR webhook payload")
         raise HTTPException(status_code=400, detail="Missing repository or workspace information")
     
     workspace_id = int(hashlib.md5(workspace_slug.encode()).hexdigest()[:8], 16)
@@ -109,10 +103,10 @@ async def handle_pullrequest_fulfilled_event(request_data: dict, session: Sessio
     pr_data = request_data.get("pullrequest", {})
     
     if not pr_data:
-        logger.warning("PR merge webhook missing pullrequest data")
+        logger.warning(f"PR webhook missing pullrequest data for event {event_type}")
         return {
-            "message": "PR merge webhook missing pullrequest data",
-            "event_type": "pullrequest:fulfilled",
+            "message": "PR webhook missing pullrequest data",
+            "event_type": event_type,
         }
     
     result = await process_bitbucket_pr_merge(
@@ -122,21 +116,21 @@ async def handle_pullrequest_fulfilled_event(request_data: dict, session: Sessio
         repo_url=repo_url,
         workspace_id=workspace_id,
         session=session,
-        skip_existing=True,
+        skip_existing=False,  # Use upsert logic
     )
     
     if result is None:
         return {
-            "message": "PR merge already exists or failed to process",
-            "event_type": "pullrequest:fulfilled",
+            "message": "PR processing failed",
+            "event_type": event_type,
             "pr_number": pr_data.get("id"),
         }
     
     return {
-        "message": "PR merge processed successfully",
-        "event_type": "pullrequest:fulfilled",
+        "message": f"PR {event_type} processed successfully",
+        "event_type": event_type,
         "pr_number": pr_data.get("id"),
-        "merged_by": result.merged_by,
+        "status": result.status,
     }
 
 
@@ -228,6 +222,12 @@ async def handle_push_event(request_data: dict, session: Session):
         changes = push_data.get("changes", [])
         
         for change in changes:
+            # Extract branch name from change.new.name (Bitbucket format)
+            branch_name = change.get("new", {}).get("name")
+            if not branch_name:
+                # Fallback: try to get from old.name if new doesn't exist
+                branch_name = change.get("old", {}).get("name")
+            
             commits = change.get("commits", [])
             
             for commit in commits:
@@ -260,6 +260,45 @@ async def handle_push_event(request_data: dict, session: Session):
                     session=session,
                     skip_existing=True,
                 )
+                
+                # Update branch_raw table
+                try:
+                    # Extract email from commit author (same pattern as process_bitbucket_commit_from_webhook)
+                    author_info = commit.get("author", {})
+                    author_name = author_info.get("raw", "Unknown")
+                    commit_email = ""
+                    
+                    if " <" in author_name and author_name.endswith(">"):
+                        parts = author_name.rsplit(" <", 1)
+                        commit_email = parts[1].rstrip(">")
+                    
+                    # Extract commit_date from commit data
+                    timestamp_str = commit.get("date")
+                    if timestamp_str:
+                        try:
+                            if timestamp_str.endswith("Z"):
+                                timestamp_str = timestamp_str.replace("Z", "+00:00")
+                            elif "+" not in timestamp_str and "-" not in timestamp_str[-6:]:
+                                timestamp_str = timestamp_str + "+00:00"
+                            commit_date = datetime.fromisoformat(timestamp_str)
+                        except (ValueError, AttributeError):
+                            commit_date = datetime.utcnow()
+                    else:
+                        commit_date = datetime.utcnow()
+                    
+                    # Update branch_raw table
+                    await update_branch_raw_from_commit(
+                        session=session,
+                        email=commit_email,
+                        repository_full_name=repo_full_name,
+                        branch_name=branch_name,
+                        commit_date=commit_date,
+                        installation_id=workspace_id,
+                        commit_hash=commit_hash,
+                    )
+                except Exception as e:
+                    # Log error but don't fail the webhook
+                    logger.warning(f"Failed to update branch_raw for commit {commit_hash}: {e}", exc_info=True)
                 
                 if result is None:
                     skipped_count += 1
