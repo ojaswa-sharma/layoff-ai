@@ -259,6 +259,7 @@ async def handle_push_event(request_data: dict, session: Session):
                     workspace_id=workspace_id,
                     session=session,
                     skip_existing=True,
+                    branch_name=branch_name,
                 )
                 
                 # Update branch_raw table

@@ -363,19 +363,21 @@ async def process_commit_from_webhook(
                 logger.debug(f"Commit {commit_hash} already exists, skipping")
                 return None
         
-        commit_api_url = f"https://api.github.com/repos/{repo_full_name}/commits/{full_commit_hash}"
+        # commit_api_url = f"https://api.github.com/repos/{repo_full_name}/commits/{full_commit_hash}"
         
-        try:
-            print(f"[DEBUG] Fetching diff from GitHub API")
-            diff_text = await fetch_diff_from_webhook(
-                commit_api_url, installation_id, app_id, private_key_pem
-            )
+        # try:
+        #     print(f"[DEBUG] Fetching diff from GitHub API")
+        #     diff_text = await fetch_diff_from_webhook(
+        #         commit_api_url, installation_id, app_id, private_key_pem
+        #     )
             
                 
-        except Exception as e:
-            logger.warning(f"Failed to fetch diff for commit {commit_hash}: {e}")
-            diff_text = ""
+        # except Exception as e:
+        #     logger.warning(f"Failed to fetch diff for commit {commit_hash}: {e}")
+        #     diff_text = ""
         
+        diff_text = ""
+
         timestamp_str = commit_data.get("timestamp")
         if timestamp_str:
             try:
@@ -445,6 +447,7 @@ async def process_bitbucket_commit_from_webhook(
     workspace_id: int,
     session: Session,
     skip_existing: bool = True,
+    branch_name: Optional[str] = None,
 ) -> Optional[Commit]:
     """
     Process a Bitbucket commit from a webhook event using ClickHouse.
@@ -464,6 +467,7 @@ async def process_bitbucket_commit_from_webhook(
         workspace_id: Bitbucket workspace identifier (used as installation_id equivalent)
         session: SQLAlchemy session
         skip_existing: If True, skip commits that already exist
+        branch_name: Optional branch name for the commit
     
     Returns:
         Commit model if successfully processed, None if skipped
@@ -535,6 +539,7 @@ async def process_bitbucket_commit_from_webhook(
             repository_url=repo_url,
             installation_id=workspace_id,
             changes=changes,
+            branch_name=branch_name,
         )
         
         success = await insert_commit_ch(session, commit_model)
