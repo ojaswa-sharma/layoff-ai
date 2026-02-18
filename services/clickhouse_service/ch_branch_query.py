@@ -47,11 +47,12 @@ async def get_user_branches(
                 uba.branch_name,
                 finalizeAggregation(uba.commit_count) AS commit_count,
                 finalizeAggregation(uba.last_commit_date) AS last_commit_date
-            FROM user_branch_agg FINAL uba
+            FROM user_branch_agg AS uba FINAL
             WHERE uba.email = :email
-            ORDER BY finalizeAggregation(uba.last_commit_date) DESC
+            ORDER BY last_commit_date DESC
             LIMIT :limit OFFSET :offset
         """)
+            # ORDER BY finalizeAggregation(uba.last_commit_date) DESC
         
         result = session.execute(
             query,
