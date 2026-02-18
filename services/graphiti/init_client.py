@@ -35,7 +35,7 @@ def init_graphiti():
     _reranker = OpenAIRerankerClient(
         config=LLMConfig(
             api_key=api_key,
-            model="gpt-4.1-nano",
+            model="gpt-5-nano",
             temperature=1.0,
         )
     )
