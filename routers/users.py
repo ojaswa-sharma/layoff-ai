@@ -7,6 +7,7 @@ from fastapi.responses import ORJSONResponse
 import logging
 from dependencies.auth import verify_auth_token
 from models.orders import OrderBy, OrderDir
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -74,14 +75,15 @@ async def get_developer(
             project_data = await personalizer.get_project_data(
                 graph_id=f"{email}_{project}"
             )
-
-        dev_data = await get_developer_ch(
+        user_data_thread = personalizer.get_user_persona(user_id=email)
+        dev_data_thread = get_developer_ch(
             session=session,
             email=email,
             project=project,
             page=page,
             limit=limit,
         )
+        user_data, dev_data = await asyncio.gather(user_data_thread, dev_data_thread)
 
         # tech_stack_data = await get_tech_stack_ch(
         #     session=session,
@@ -95,6 +97,7 @@ async def get_developer(
             "stats": dev_data.get("stats", {}),
             "pagination": dev_data.get("pagination", {}),
             "commit_history": dev_data.get("commit_history", []),
+            "user_data" : user_data
             # "tech_stack_data": tech_stack_data,
         }
 
