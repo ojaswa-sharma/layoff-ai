@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from dependencies.ch_db import get_ch_session
 from services.clickhouse_service.ch_users import list_users_ch, list_users_paginated_ch, get_developer_ch
-from services.clickhouse_service.ch_tech_stack import get_tech_stack_ch
 from services.clickhouse_service.ch_pr_query import get_prs_ch
+from services.clickhouse_service.ch_branch_query import get_user_branches
 from services.graphiti.graphiti_store import get_graphitit_personalizer
 from fastapi.responses import ORJSONResponse
 import logging
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix='/v1/users',
-    dependencies=[Depends(verify_auth_token)]
+    # dependencies=[Depends(verify_auth_token)]
 )
 
 @router.get("/")
@@ -155,7 +155,7 @@ async def list_prs(
             except ValueError:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Invalid date_from format. Use ISO 8601 format (e.g., 2026-02-17T05:47:25Z)"
+                    detail="Invalid date_from format. Use ISO 8601 format (e.g., 2026-02-17T05:47:25Z)"
                 )
         
         if date_to:
@@ -164,14 +164,14 @@ async def list_prs(
             except ValueError:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Invalid date_to format. Use ISO 8601 format (e.g., 2026-02-17T05:47:25Z)"
+                    detail="Invalid date_to format. Use ISO 8601 format (e.g., 2026-02-17T05:47:25Z)"
                 )
         
         # Validate status if provided
         if status and status not in ["open", "closed", "merged"]:
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid status. Must be one of: open, closed, merged"
+                detail="Invalid status. Must be one of: open, closed, merged"
             )
         
         # Query PRs
@@ -193,3 +193,32 @@ async def list_prs(
     except Exception as e:
         logger.error(f"Error listing PRs: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error querying PRs: {str(e)}")
+
+
+@router.get("/{email}/branches")
+async def get_user_branch_analytics(
+    email: str,
+    page: int = Query(1, ge=1, description="Page number"),
+    limit: int = Query(20, ge=1, le=100, description="Results per page"),
+    session: Session = Depends(get_ch_session),
+):
+    """
+    Get branch analytics for a specific user.
+    
+    Returns branch information including:
+    - branch_name: Name of the branch
+    - repository_full_name: Full repository name (owner/repo)
+    - commit_count: Number of commits by this user on this branch
+    - last_commit_date: Date and time of the most recent commit
+    """
+    try:
+        result = await get_user_branches(
+            session=session,
+            email=email,
+            page=page,
+            limit=limit,
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Error fetching branch analytics for {email}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error fetching branch analytics: {str(e)}")

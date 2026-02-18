@@ -57,6 +57,33 @@ def add_materialized_change_columns(engine):
                     FROM commits
                     GROUP BY email, repo_name
                 """))
+            
+            # Check if user_branch_agg_mv exists
+            branch_mv_exists = conn.execute(text("""
+                SELECT count(*) 
+                FROM system.tables 
+                WHERE database = 'default' AND name = 'user_branch_agg_mv'
+            """))
+            branch_mv_exists = branch_mv_exists.fetchone()[0]
+            if branch_mv_exists == 0:
+                conn.execute(text("""
+                    CREATE MATERIALIZED VIEW user_branch_agg_mv
+                    TO user_branch_agg
+                    AS
+                    SELECT
+                        email,
+                        repository_name AS repository_full_name,
+                        branch_name,
+                        countState() AS commit_count,
+                        maxState(date) AS last_commit_date,
+                        sumState(additions) AS total_additions,
+                        sumState(deletions) AS total_deletions,
+                        anyLastState('') AS last_pr_status
+                    FROM commits
+                    WHERE branch_name IS NOT NULL AND branch_name != ''
+                    GROUP BY email, repository_name, branch_name
+                """))
+            
             stats_exists = conn.execute(text("""
                 SELECT count(*) 
                 FROM system.tables 

@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from models.commits import SyncStatus
 from services.clickhouse_service.ch_commit_processor import process_commit_from_webhook
 from services.clickhouse_service.ch_commit_processor import check_commit_exists_ch
+from services.clickhouse_service.ch_commit_processor import update_branch_raw_from_commit
 from services.clickhouse_service.ch_pr_merge_processor import process_github_pr_merge
 from services.clickhouse_service.ch_backfill import get_repository_status_ch, update_repository_status_ch, backfill_repository_ch
 from services.tech_stack_service import fetch_github_tech_stack
@@ -231,6 +232,17 @@ async def handle_push_event(request_data: dict, session: Session):
         processed_count = 0
         skipped_count = 0
         
+        # Extract branch name from ref (format: refs/heads/branch-name)
+        ref = request_data.get("ref", "")
+        branch_name = None
+        if ref.startswith("refs/heads/"):
+            branch_name = ref.replace("refs/heads/", "")
+        elif ref.startswith("refs/"):
+            # Handle other ref types (tags, etc.) - extract branch name if possible
+            parts = ref.split("/")
+            if len(parts) >= 3 and parts[1] == "heads":
+                branch_name = "/".join(parts[2:])
+        
         for commit in request_data.get("commits", []):
 
             # for commit in payload["commits"]:
@@ -265,7 +277,37 @@ async def handle_push_event(request_data: dict, session: Session):
                 private_key_pem=pem_data,
                 session=session,
                 skip_existing=True,
+                branch_name=branch_name,
             )
+
+
+            try:
+                # Extract email and commit_date from commit data
+                commit_email = commit.get("author", {}).get("email", "")
+                timestamp_str = commit.get("timestamp")
+                if timestamp_str:
+                    try:
+                        if timestamp_str.endswith("Z"):
+                            timestamp_str = timestamp_str.replace("Z", "+00:00")
+                        commit_date = datetime.fromisoformat(timestamp_str)
+                    except (ValueError, AttributeError):
+                        commit_date = datetime.utcnow()
+                else:
+                    commit_date = datetime.utcnow()
+                
+                # Update branch_raw table
+                await update_branch_raw_from_commit(
+                    session=session,
+                    email=commit_email,
+                    repository_full_name=repo_full_name,
+                    branch_name=branch_name,
+                    commit_date=commit_date,
+                    installation_id=installation_id,
+                    commit_hash=commit_hash,
+                )
+            except Exception as e:
+                # Log error but don't fail the webhook
+                logger.warning(f"Failed to update branch_raw for commit {commit_hash}: {e}", exc_info=True)
             
             if result is None:
                 skipped_count += 1

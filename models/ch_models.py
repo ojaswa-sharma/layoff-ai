@@ -9,7 +9,7 @@ from sqlalchemy.orm import column_property
 from dependencies.ch_db import Base
 from sqlalchemy.sql import literal_column
 from clickhouse_sqlalchemy import engines
-from clickhouse_sqlalchemy.types import LowCardinality, String, AggregateFunction, UInt64, Int64, UInt8
+from clickhouse_sqlalchemy.types import LowCardinality, String, AggregateFunction, UInt64, Int64
 from datetime import datetime, timezone
 
 
@@ -33,6 +33,7 @@ class CommitCH(Base):
     email = Column(LowCardinality(String), nullable=False)
     date = Column(DateTime, nullable=False)
     changes = Column(String, nullable=True)
+    branch_name = Column(LowCardinality(String), nullable=True)
     additions = column_property(
             literal_column("additions", Integer)
         )
@@ -60,6 +61,7 @@ class CommitCH(Base):
             "email": self.email,
             "date": self.date,
             "changes": changes_dict,
+            "branch_name": self.branch_name,
         }
 
     @classmethod
@@ -74,6 +76,7 @@ class CommitCH(Base):
             email=commit.email,
             date=commit.date,
             changes=json.dumps(commit.changes) if commit.changes else "",
+            branch_name=getattr(commit, 'branch_name', None),
         )
 
 
@@ -339,22 +342,16 @@ class BranchRawCH(Base):
 
     __table_args__ = (
         engines.MergeTree(
-            order_by=("repository_full_name", "branch_name"),
+            order_by=("repository_full_name", "branch_name", "email"),
             partition_by=text("toYYYYMM(fetched_at)")
         ),
     )
 
     repository_full_name = Column(LowCardinality(String), primary_key=True)
     branch_name = Column(LowCardinality(String), primary_key=True)
+    email = Column(LowCardinality(String), primary_key=True)
 
-    base_branch = Column(LowCardinality(String), nullable=True)
-    commit_sha = Column(String, nullable=False)
     commit_date = Column(DateTime, nullable=False)
-
-    ahead_by = Column(Int64, nullable=True)
-    behind_by = Column(Int64, nullable=True)
-
-    is_protected = Column(UInt8, default=0)
     installation_id = Column(UInt64, nullable=False)
 
     fetched_at = Column(DateTime, default=datetime.utcnow)
@@ -373,10 +370,10 @@ class UserBranchAggregateCH(Base):
     repository_full_name = Column(LowCardinality(String), primary_key=True)
     branch_name = Column(LowCardinality(String), primary_key=True)
 
-    commit_count = Column(AggregateFunction("count", UInt64))
+    commit_count = Column(AggregateFunction("count", Integer))
     last_commit_date = Column(AggregateFunction("max", DateTime))
-    total_additions = Column(AggregateFunction("sum", UInt64))
-    total_deletions = Column(AggregateFunction("sum", UInt64))
+    total_additions = Column(AggregateFunction("sum", Integer))
+    total_deletions = Column(AggregateFunction("sum", Integer))
 
     last_pr_status = Column(AggregateFunction("anyLast", String))
     last_seen = Column(DateTime)

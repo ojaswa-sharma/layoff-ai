@@ -9,9 +9,9 @@ import asyncio
 from typing import Optional, Tuple
 from datetime import datetime
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, text
 from models.commits import Commit, SyncStatus
-from models.ch_models import CommitCH, RepoSyncEventCH, PRMergeCH
+from models.ch_models import CommitCH, RepoSyncEventCH, PRMergeCH, BranchRawCH
 from services.git_diff import fetch_diff_from_webhook, fetch_bitbucket_diff, count_diff_stats
 from services.ai_service import summarize_and_upload
 from services.background_worker import get_worker_manager
@@ -212,6 +212,103 @@ async def process_commit_ch(
         session.close()
 
 
+async def update_branch_raw_from_commit(
+    session: Session,
+    email: str,
+    repository_full_name: str,
+    branch_name: str,
+    commit_date: datetime,
+    installation_id: int,
+    commit_hash: Optional[str] = None,
+) -> bool:
+    """
+    Insert or update BranchRawCH table with commit data.
+    
+    This function ensures a row exists in BranchRawCH for tracking purposes.
+    Commit counts and last commit dates are calculated and stored in UserBranchAggregateCH
+    via materialized views, not in BranchRawCH.
+    
+    Args:
+        session: SQLAlchemy session
+        email: Committer email
+        repository_full_name: Repository full name (owner/repo)
+        branch_name: Branch name
+        commit_date: Commit date
+        installation_id: Installation ID
+        commit_hash: Optional commit hash (shortened, 12 chars)
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        # Skip if branch_name or email is None or empty
+        if not branch_name or not email:
+            logger.debug(f"Skipping branch update: branch_name={branch_name}, email={email}")
+            return False
+        
+        # Check if row exists
+        existing = session.query(BranchRawCH).filter(
+            BranchRawCH.repository_full_name == repository_full_name,
+            BranchRawCH.branch_name == branch_name,
+            BranchRawCH.email == email,
+        ).first()
+        
+        if existing:
+            # Row already exists - no need to update since commit_count and last_commit_date
+            # are calculated in UserBranchAggregateCH via materialized views
+            # Optionally update commit_date to latest value
+            date_str = commit_date.strftime("%Y-%m-%d %H:%M:%S")
+            repo_escaped = repository_full_name.replace("'", "''")
+            branch_escaped = branch_name.replace("'", "''")
+            email_escaped = email.replace("'", "''")
+            
+            update_sql = text(f"""
+                ALTER TABLE branches_raw
+                UPDATE 
+                    commit_date = '{date_str}'
+                WHERE 
+                    repository_full_name = '{repo_escaped}'
+                    AND branch_name = '{branch_escaped}'
+                    AND email = '{email_escaped}'
+            """)
+            
+            session.execute(update_sql)
+            session.commit()
+            
+            logger.debug(
+                f"Updated branch_raw commit date: {repository_full_name}/{branch_name} "
+                f"for {email}"
+            )
+        else:
+            # Insert new row
+            branch_record = BranchRawCH(
+                repository_full_name=repository_full_name,
+                branch_name=branch_name,
+                email=email,
+                commit_date=commit_date,
+                installation_id=installation_id,
+                fetched_at=datetime.utcnow(),
+            )
+            session.add(branch_record)
+            session.commit()
+            
+            logger.debug(
+                f"Inserted new branch_raw: {repository_full_name}/{branch_name} "
+                f"for {email}"
+            )
+        
+        return True
+        
+    except Exception as e:
+        session.rollback()
+        logger.error(
+            f"Error updating branch_raw for {repository_full_name}/{branch_name} "
+            f"(email: {email}): {e}",
+            exc_info=True
+        )
+        return False
+
+
 async def process_commit_from_webhook(
     commit_data: dict,
     repo_full_name: str,
@@ -222,6 +319,7 @@ async def process_commit_from_webhook(
     private_key_pem: str,
     session: Session,
     skip_existing: bool = True,
+    branch_name: Optional[str] = None,
 ) -> Optional[Commit]:
     """
     Process a commit from a GitHub webhook event using ClickHouse.
@@ -300,6 +398,7 @@ async def process_commit_from_webhook(
             repository_url=repo_url,
             installation_id=installation_id,
             changes=count_diff_stats(diff_text=diff_text) if diff_text else None,
+            branch_name=branch_name,
         )
         
         success = await insert_commit_ch(session, commit_model)
