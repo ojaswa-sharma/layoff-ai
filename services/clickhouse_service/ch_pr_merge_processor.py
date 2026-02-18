@@ -82,9 +82,8 @@ async def process_pr_ch(
                 )
                 return None
         
-        # success = await upsert_pr_ch(session, pr_merge)
-        print("PR-Merge: ", pr_merge)
-        success = True
+        success = await upsert_pr_ch(session, pr_merge)
+        
         if not success:
             return None
         
@@ -111,6 +110,7 @@ async def process_github_pr_merge(
     Process a GitHub PR event (opened, closed, merged) using ClickHouse.
     """
     try:
+        print("pr func called for github")
         pr_number = pr_data.get("number")
         pr_title = pr_data.get("title", "")
         pr_state = pr_data.get("state", "open")  # "open", "closed"
@@ -202,6 +202,8 @@ async def process_github_pr_merge(
             additions=additions,
             deletions=deletions,
         )
+
+        print("pr_merge_model for github ===============: ", pr_merge_model)
         
         result = await process_pr_ch(
             pr_merge_model,
