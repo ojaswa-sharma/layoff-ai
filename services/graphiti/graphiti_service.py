@@ -178,7 +178,6 @@ class Personalizer:
 
                 properties = {
                     "name": props.get("name"),
-                    # "summary": props.get("summary"),
                     "created_at": props.get("created_at"),
                 }
 
