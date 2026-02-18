@@ -445,6 +445,7 @@ async def process_bitbucket_commit_from_webhook(
     workspace_id: int,
     session: Session,
     skip_existing: bool = True,
+    branch_name: Optional[str] = None,
 ) -> Optional[Commit]:
     """
     Process a Bitbucket commit from a webhook event using ClickHouse.
@@ -464,6 +465,7 @@ async def process_bitbucket_commit_from_webhook(
         workspace_id: Bitbucket workspace identifier (used as installation_id equivalent)
         session: SQLAlchemy session
         skip_existing: If True, skip commits that already exist
+        branch_name: Optional branch name for the commit
     
     Returns:
         Commit model if successfully processed, None if skipped
@@ -535,6 +537,7 @@ async def process_bitbucket_commit_from_webhook(
             repository_url=repo_url,
             installation_id=workspace_id,
             changes=changes,
+            branch_name=branch_name,
         )
         
         success = await insert_commit_ch(session, commit_model)
