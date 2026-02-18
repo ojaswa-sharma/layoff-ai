@@ -178,7 +178,7 @@ class Personalizer:
 
                 properties = {
                     "name": props.get("name"),
-                    "summary": props.get("summary"),
+                    # "summary": props.get("summary"),
                     "created_at": props.get("created_at"),
                 }
 
@@ -188,6 +188,7 @@ class Personalizer:
                     properties["feature_name"] = props.get("feature_name")
                     properties["feature_description"] = props.get("feature_description")
                 elif label_name == "Developer":
+                    properties["summary"] = props.get("summary"),
                     properties["developer_work"] = props.get("developer_work")
 
                 nodes.append({
