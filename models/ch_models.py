@@ -412,3 +412,79 @@ class UserBranchAggregateCH(Base):
 
     last_pr_status = Column(AggregateFunction("anyLast", String))
     last_seen = Column(DateTime)
+
+
+class WorkItemCH(Base):
+    __tablename__ = "work_items"
+
+    __table_args__ = (
+        engines.ReplacingMergeTree(
+            "last_updated_at",
+            order_by=("workspace_id", "work_item_id"),
+        ),
+    )
+
+    work_item_id = Column(String, primary_key=True)
+    workspace_id = Column(String, primary_key=True)
+
+    title = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    status = Column(LowCardinality(String), nullable=False)
+    assignee_email = Column(LowCardinality(String), nullable=True)
+    assignee_name = Column(LowCardinality(String), nullable=True)
+    assigner_email = Column(LowCardinality(String), nullable=True)
+    assigner_name = Column(LowCardinality(String), nullable=True)
+    created_at = Column(DateTime, nullable=False)
+    last_updated_at = Column(DateTime, nullable=False)
+    project_id = Column(String, nullable=True)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "work_item_id": self.work_item_id,
+            "workspace_id": self.workspace_id,
+            "title": self.title,
+            "description": self.description,
+            "status": self.status,
+            "assignee_email": self.assignee_email,
+            "assignee_name": self.assignee_name,
+            "assigner_email": self.assigner_email,
+            "assigner_name": self.assigner_name,
+            "created_at": self.created_at,
+            "last_updated_at": self.last_updated_at,
+            "project_id": self.project_id,
+        }
+
+    @classmethod
+    def from_pydantic(cls, work_item, session=None):
+        # Handle None values for String and LowCardinality(String) columns
+        # ClickHouse SQLAlchemy driver may try to encode None, causing "'NoneType' object has no attribute 'encode'" error
+        # Convert None to empty string for nullable String columns to avoid encoding issues
+        description_val = getattr(work_item, 'description', None)
+        assignee_email_val = getattr(work_item, 'assignee_email', None)
+        assignee_name_val = getattr(work_item, 'assignee_name', None)
+        assigner_email_val = getattr(work_item, 'assigner_email', None)
+        assigner_name_val = getattr(work_item, 'assigner_name', None)
+        project_id_val = getattr(work_item, 'project_id', None)
+        
+        # Convert None to empty string for nullable String columns to prevent encoding errors
+        description = description_val if description_val is not None else ""
+        assignee_email = assignee_email_val if assignee_email_val is not None else ""
+        assignee_name = assignee_name_val if assignee_name_val is not None else ""
+        assigner_email = assigner_email_val if assigner_email_val is not None else ""
+        assigner_name = assigner_name_val if assigner_name_val is not None else ""
+        project_id = project_id_val if project_id_val is not None else ""
+        
+        return cls(
+            work_item_id=work_item.work_item_id,
+            workspace_id=work_item.workspace_id,
+            title=work_item.title,
+            description=description,
+            status=work_item.status,
+            assignee_email=assignee_email,
+            assignee_name=assignee_name,
+            assigner_email=assigner_email,
+            assigner_name=assigner_name,
+            created_at=work_item.created_at,
+            last_updated_at=work_item.last_updated_at,
+            project_id=project_id,
+        )
