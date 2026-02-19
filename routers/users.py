@@ -95,12 +95,11 @@ async def get_developer(
         # )
 
         response = {
-            "user_data": "TBD",
             "projects": dev_data.get("projects", []),
             "stats": dev_data.get("stats", {}),
             "pagination": dev_data.get("pagination", {}),
             "commit_history": dev_data.get("commit_history", []),
-            "user_data" : user_data
+            "user_data": user_data
             # "tech_stack_data": tech_stack_data,
         }
 
@@ -114,12 +113,12 @@ async def get_developer(
         return {"error": "Failed to fetch developer data"}
 
 
-@router.get("/prs")
+@router.get("/pr/{email}")
 async def list_prs(
+    email: str,
     session: Session = Depends(get_ch_session),
     repository_full_name: str = Query(None, description="Filter by repository full name (owner/repo)"),
     status: str = Query(None, description="Filter by PR status: open, closed, or merged"),
-    created_by_email: str = Query(None, description="Filter by PR creator email"),
     date_from: str = Query(None, description="Filter PRs updated after this date (ISO format)"),
     date_to: str = Query(None, description="Filter PRs updated before this date (ISO format)"),
     page: int = Query(1, ge=1, description="Page number"),
@@ -138,10 +137,12 @@ async def list_prs(
     - Branch name
     - Last updated timestamp
     
+    Path Parameters:
+    - email: Email of the PR creator (required)
+    
     Query Parameters:
     - repository_full_name: Filter by repository (e.g., "owner/repo")
     - status: Filter by status ("open", "closed", "merged")
-    - created_by_email: Filter by PR creator email (for searching PRs by user)
     - date_from: Filter PRs updated after this date (ISO 8601 format)
     - date_to: Filter PRs updated before this date (ISO 8601 format)
     - page: Page number (default: 1)
@@ -182,7 +183,7 @@ async def list_prs(
             session=session,
             repository_full_name=repository_full_name,
             status=status,
-            created_by_email=created_by_email,
+            created_by_email=email,
             date_from=date_from_dt,
             date_to=date_to_dt,
             page=page,
@@ -198,7 +199,7 @@ async def list_prs(
         raise HTTPException(status_code=500, detail=f"Error querying PRs: {str(e)}")
 
 
-@router.get("/{email}/branches")
+@router.get("/branch/{email}")
 async def get_user_branch_analytics(
     email: str,
     page: int = Query(1, ge=1, description="Page number"),

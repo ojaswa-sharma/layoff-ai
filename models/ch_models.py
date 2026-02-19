@@ -132,20 +132,41 @@ class PRMergeCH(Base):
 
     @classmethod
     def from_pydantic(cls, pr_merge, session=None):
+        # Handle None values for String and LowCardinality(String) columns
+        # ClickHouse SQLAlchemy driver may try to encode None, causing "'NoneType' object has no attribute 'encode'" error
+        # Convert None to empty string for nullable String columns to avoid encoding issues
+        merge_commit_hash_val = getattr(pr_merge, 'merge_commit_hash', None)
+        merged_by_val = getattr(pr_merge, 'merged_by', None)
+        merged_by_email_val = getattr(pr_merge, 'merged_by_email', None)
+        branch_val = getattr(pr_merge, 'branch', None)
+        
+        # Convert None to empty string for nullable String columns to prevent encoding errors
+        merge_commit_hash = merge_commit_hash_val if merge_commit_hash_val is not None else ""
+        merged_by = merged_by_val if merged_by_val is not None else ""
+        merged_by_email = merged_by_email_val if merged_by_email_val is not None else ""
+        branch = branch_val if branch_val is not None else ""
+        
+        # Handle None values for Int64 columns
+        # ClickHouse Int64 type doesn't accept Python None directly, convert to 0
+        additions_val = getattr(pr_merge, 'additions', None)
+        deletions_val = getattr(pr_merge, 'deletions', None)
+        additions = additions_val if additions_val is not None else 0
+        deletions = deletions_val if deletions_val is not None else 0
+        
         return cls(
             pr_number=pr_merge.pr_number,
             pr_title=pr_merge.pr_title,
             status=pr_merge.status,
             created_by=pr_merge.created_by,
             created_by_email=pr_merge.created_by_email,
-            merge_commit_hash=getattr(pr_merge, 'merge_commit_hash', None),
-            merged_by=getattr(pr_merge, 'merged_by', None),
-            merged_by_email=getattr(pr_merge, 'merged_by_email', None),
+            merge_commit_hash=merge_commit_hash,
+            merged_by=merged_by,
+            merged_by_email=merged_by_email,
             repository_name=pr_merge.repository_name,
             repository_url=pr_merge.repository_url,
-            branch=getattr(pr_merge, 'branch', None),
-            additions=getattr(pr_merge, 'additions', None),
-            deletions=getattr(pr_merge, 'deletions', None),
+            branch=branch,
+            additions=additions,
+            deletions=deletions,
             date=pr_merge.date,
             updated_at=getattr(pr_merge, 'updated_at', pr_merge.date),
             installation_id=pr_merge.installation_id,
