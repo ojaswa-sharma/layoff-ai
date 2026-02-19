@@ -4,6 +4,7 @@ from dependencies.ch_db import get_ch_session
 from services.clickhouse_service.ch_users import list_users_ch, list_users_paginated_ch, get_developer_ch
 from services.clickhouse_service.ch_pr_query import get_prs_ch
 from services.clickhouse_service.ch_branch_query import get_user_branches
+from services.clickhouse_service.ch_work_item_query import get_work_items_ch
 from services.graphiti.graphiti_store import get_graphitit_personalizer
 from fastapi.responses import ORJSONResponse
 import logging
@@ -197,6 +198,92 @@ async def list_prs(
     except Exception as e:
         logger.error(f"Error listing PRs: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error querying PRs: {str(e)}")
+
+
+@router.get("/plane/{email}")
+async def list_work_items(
+    email: str,
+    session: Session = Depends(get_ch_session),
+    status: str = Query(None, description="Filter by work item status"),
+    workspace_id: str = Query(None, description="Filter by workspace ID"),
+    project_id: str = Query(None, description="Filter by project ID"),
+    date_from: str = Query(None, description="Filter work items updated after this date (ISO format)"),
+    date_to: str = Query(None, description="Filter work items updated before this date (ISO format)"),
+    page: int = Query(1, ge=1, description="Page number"),
+    limit: int = Query(20, ge=1, le=100, description="Number of results per page"),
+):
+    """
+    List Plane work items with filtering and pagination.
+    
+    Returns work item data including:
+    - work_item_id: Unique identifier for the work item
+    - workspace_id: Workspace identifier
+    - title: Work item title
+    - description: Work item description
+    - status: Current status of the work item
+    - assignee_email: Email of the assignee
+    - assignee_name: Display name of the assignee
+    - assigner_email: Email of the person who assigned the work item
+    - assigner_name: Display name of the assigner
+    - project_id: Project identifier
+    - created_at: Creation timestamp
+    - last_updated_at: Last update timestamp
+    
+    Path Parameters:
+    - email: Email of the assignee (required)
+    
+    Query Parameters:
+    - status: Filter by work item status (optional)
+    - workspace_id: Filter by workspace ID (optional)
+    - project_id: Filter by project ID (optional)
+    - date_from: Filter work items updated after this date (ISO 8601 format)
+    - date_to: Filter work items updated before this date (ISO 8601 format)
+    - page: Page number (default: 1)
+    - limit: Results per page (default: 20, max: 100)
+    """
+    try:
+        # Parse date strings if provided
+        date_from_dt = None
+        date_to_dt = None
+        
+        if date_from:
+            try:
+                date_from_dt = datetime.fromisoformat(date_from.replace("Z", "+00:00"))
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid date_from format. Use ISO 8601 format (e.g., 2026-02-17T05:47:25Z)"
+                )
+        
+        if date_to:
+            try:
+                date_to_dt = datetime.fromisoformat(date_to.replace("Z", "+00:00"))
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid date_to format. Use ISO 8601 format (e.g., 2026-02-17T05:47:25Z)"
+                )
+        
+        # Query work items
+        result = await get_work_items_ch(
+            session=session,
+            assignee_email=email,
+            status=status,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            date_from=date_from_dt,
+            date_to=date_to_dt,
+            page=page,
+            limit=limit,
+        )
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error listing work items: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error querying work items: {str(e)}")
 
 
 @router.get("/branch/{email}")
