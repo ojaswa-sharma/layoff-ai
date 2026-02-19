@@ -5,6 +5,7 @@ This router processes webhooks from plane.so.
 """
 from fastapi import APIRouter, Request, Depends, HTTPException
 from dotenv import load_dotenv
+from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
 from dependencies.ch_db import get_ch_session
 from services.clickhouse_service.ch_work_item_processor import process_plane_work_item
@@ -16,6 +17,14 @@ load_dotenv()
 
 router = APIRouter(prefix="/plane")
 
+
+def parse_plane_time(ts: str) -> datetime:
+    if not ts:
+        return None
+    # Plane sends ISO with Z
+    if ts.endswith("Z"):
+        ts = ts.replace("Z", "+00:00")
+    return datetime.fromisoformat(ts)
 
 @router.post("/webhook")
 async def webhook_plane(request: Request, session: Session = Depends(get_ch_session)):
@@ -96,13 +105,24 @@ async def handle_work_item_updated(request_data: dict, session: Session):
     Handle work_item.updated event - process work item updates.
     """
     try:
-
+        data = request_data.get("data", {})
         activity = request_data.get("activity", {})
 
         field = activity.get("field")
         if field and field.endswith("_id"):
             return None
-        
+
+        # Ignore low-level ID changes
+        if field and field.endswith("_id"):
+            return None
+
+        # Ignore auto updates right after creation
+        if activity.get("field") == "assignees":
+            created = parse_plane_time(data["created_at"])
+            updated = parse_plane_time(data["updated_at"])
+            if (updated - created).total_seconds() < 1:
+                return None
+
         result = await process_plane_work_item(
             webhook_data=request_data,
             session=session,
