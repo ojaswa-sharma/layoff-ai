@@ -8,6 +8,7 @@ This router processes:
 from fastapi import APIRouter, Request, Depends, HTTPException
 import os
 import asyncio
+from typing import Optional
 from dotenv import load_dotenv
 from sqlalchemy.orm import Session
 from models.commits import SyncStatus
@@ -234,14 +235,40 @@ async def handle_push_event(request_data: dict, session: Session):
         
         # Extract branch name from ref (format: refs/heads/branch-name)
         ref = request_data.get("ref", "")
-        branch_name = None
+        default_branch_name = None
         if ref.startswith("refs/heads/"):
-            branch_name = ref.replace("refs/heads/", "")
+            default_branch_name = ref.replace("refs/heads/", "")
         elif ref.startswith("refs/"):
             # Handle other ref types (tags, etc.) - extract branch name if possible
             parts = ref.split("/")
             if len(parts) >= 3 and parts[1] == "heads":
-                branch_name = "/".join(parts[2:])
+                default_branch_name = "/".join(parts[2:])
+        
+        def extract_branch_from_merge_message(message: str) -> Optional[str]:
+            """
+            Extract source branch name from GitHub merge commit message.
+            Format: "Merge pull request #N from owner/branch-name"
+            Returns just the branch name (branch-name) or None if not a merge commit.
+            """
+            if not message or not message.startswith("Merge pull request"):
+                return None
+            
+            # Pattern: "Merge pull request #N from owner/branch-name"
+            # Extract everything after "from "
+            if " from " in message:
+                parts = message.split(" from ", 1)
+                if len(parts) == 2:
+                    # Get the branch part (may have newlines or other text after)
+                    branch_part = parts[1].split("\n")[0].strip()
+                    # Remove any trailing whitespace or additional text
+                    full_branch_ref = branch_part.split()[0] if branch_part else None
+                    if full_branch_ref:
+                        # Extract just the branch name (after the last "/")
+                        # Format is "owner/branch-name", we want "branch-name"
+                        if "/" in full_branch_ref:
+                            return full_branch_ref.split("/")[-1]
+                        return full_branch_ref
+            return None
         
         for commit in request_data.get("commits", []):
 
@@ -267,6 +294,13 @@ async def handle_push_event(request_data: dict, session: Session):
                 logger.debug(f"Commit {commit_hash} already exists, skipping")
                 break
 
+            # For merge commits, extract source branch from commit message
+            # Otherwise use the ref branch name
+            commit_message = commit.get("message", "")
+            commit_branch_name = extract_branch_from_merge_message(commit_message)
+            if not commit_branch_name:
+                commit_branch_name = default_branch_name
+
             result = await process_commit_from_webhook(
                 commit_data=commit,
                 repo_full_name=repo_full_name,
@@ -277,7 +311,7 @@ async def handle_push_event(request_data: dict, session: Session):
                 private_key_pem=pem_data,
                 session=session,
                 skip_existing=True,
-                branch_name=branch_name,
+                branch_name=commit_branch_name,
             )
 
 
@@ -300,7 +334,7 @@ async def handle_push_event(request_data: dict, session: Session):
                     session=session,
                     email=commit_email,
                     repository_full_name=repo_full_name,
-                    branch_name=branch_name,
+                    branch_name=commit_branch_name,
                     commit_date=commit_date,
                     installation_id=installation_id,
                     commit_hash=commit_hash,
