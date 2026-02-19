@@ -424,8 +424,8 @@ class WorkItemCH(Base):
         ),
     )
 
-    work_item_id = Column(String, primary_key=True)
     workspace_id = Column(String, primary_key=True)
+    work_item_id = Column(String, primary_key=True)
 
     title = Column(String, nullable=False)
     description = Column(String, nullable=True)
