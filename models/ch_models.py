@@ -437,6 +437,7 @@ class WorkItemCH(Base):
     created_at = Column(DateTime, nullable=False)
     last_updated_at = Column(DateTime, nullable=False)
     project_id = Column(String, nullable=True)
+    source = Column(String, nullable=True)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -452,6 +453,7 @@ class WorkItemCH(Base):
             "created_at": self.created_at,
             "last_updated_at": self.last_updated_at,
             "project_id": self.project_id,
+            "source": self.source,
         }
 
     @classmethod
@@ -465,6 +467,7 @@ class WorkItemCH(Base):
         assigner_email_val = getattr(work_item, 'assigner_email', None)
         assigner_name_val = getattr(work_item, 'assigner_name', None)
         project_id_val = getattr(work_item, 'project_id', None)
+        source_val = getattr(work_item, 'source', None)
         
         # Convert None to empty string for nullable String columns to prevent encoding errors
         description = description_val if description_val is not None else ""
@@ -473,6 +476,7 @@ class WorkItemCH(Base):
         assigner_email = assigner_email_val if assigner_email_val is not None else ""
         assigner_name = assigner_name_val if assigner_name_val is not None else ""
         project_id = project_id_val if project_id_val is not None else ""
+        source = source_val if source_val is not None else ""
         
         return cls(
             work_item_id=work_item.work_item_id,
@@ -487,4 +491,5 @@ class WorkItemCH(Base):
             created_at=work_item.created_at,
             last_updated_at=work_item.last_updated_at,
             project_id=project_id,
+            source=source,
         )

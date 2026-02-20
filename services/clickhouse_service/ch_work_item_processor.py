@@ -185,7 +185,7 @@ async def process_plane_work_item(
         created_at = parse_date(created_at_str) if created_at_str else datetime.utcnow()
         last_updated_at = parse_date(updated_at_str) if updated_at_str else created_at
         
-        # Create WorkItem model
+        # Create WorkItem model with source="plane"
         work_item_model = WorkItem(
             work_item_id=work_item_id,
             workspace_id=workspace_id,
@@ -199,6 +199,7 @@ async def process_plane_work_item(
             created_at=created_at,
             last_updated_at=last_updated_at,
             project_id=project_id,
+            source="plane",
         )
         
         result = await process_work_item_ch(
@@ -213,3 +214,109 @@ async def process_plane_work_item(
         logger.error(f"Error processing Plane work item: {e}", exc_info=True)
         return None
 
+
+async def process_jira_work_item(
+    webhook_data: dict,
+    session: Session,
+    skip_existing: bool = False,
+) -> Optional[WorkItem]:
+    """
+    Process a Jira work item webhook event (created, updated, or deleted).
+    
+    Extracts data from webhook payload and creates WorkItem model.
+    
+    Args:
+        webhook_data: The webhook payload dictionary
+        session: SQLAlchemy session
+        skip_existing: If True, skip if work item already exists
+        
+    Returns:
+        WorkItem model if successfully processed, None if skipped or failed
+    """
+    try:
+        issue = webhook_data.get("issue", {})
+        user = webhook_data.get("user", {})
+        
+        # Extract work item ID and workspace ID
+        work_item_id = issue.get("key")  # e.g., "SCRUM-5"
+        project = issue.get("project", {})
+        workspace_id = project.get("key")  # e.g., "SCRUM"
+        
+        if not work_item_id or not workspace_id:
+            logger.warning("Jira work item event missing required IDs")
+            return None
+        
+        # Extract title
+        title = issue.get("summary", "")
+        
+        # Extract description
+        description = issue.get("description", "")
+        
+        # Extract status
+        status_obj = issue.get("status", {})
+        status = status_obj.get("name", "Unknown") if isinstance(status_obj, dict) else "Unknown"
+        
+        # Extract assignee info
+        assignee = issue.get("assignee")
+        assignee_email = None
+        assignee_name = None
+        if assignee and isinstance(assignee, dict):
+            # Jira uses accountId (no emailAddress in webhook)
+            assignee_email = assignee.get("accountId")
+            assignee_name = assignee.get("displayName")
+        
+        # Extract assigner info (from user object in webhook)
+        assigner_email = None
+        assigner_name = None
+        if user and isinstance(user, dict):
+            assigner_email = user.get("accountId")
+            assigner_name = user.get("displayName")
+        
+        # Extract project ID
+        project_id = project.get("id") or project.get("key")
+        
+        # Parse dates - Jira uses ISO format with timezone (e.g., "2026-02-20T12:00:42.088+0530")
+        def parse_jira_date(date_str: str) -> datetime:
+            if not date_str:
+                return datetime.utcnow()
+            try:
+                # Jira dates are in ISO format with timezone offset
+                return datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+            except (ValueError, AttributeError) as e:
+                logger.warning(f"Could not parse Jira date {date_str}: {e}, using current time")
+                return datetime.utcnow()
+        
+        created_at_str = issue.get("created")
+        updated_at_str = issue.get("updated")
+        
+        created_at = parse_jira_date(created_at_str) if created_at_str else datetime.utcnow()
+        last_updated_at = parse_jira_date(updated_at_str) if updated_at_str else created_at
+        
+        # Create WorkItem model with source="jira"
+        work_item_model = WorkItem(
+            work_item_id=work_item_id,
+            workspace_id=workspace_id,
+            title=title,
+            description=description if description else None,
+            status=status,
+            assignee_email=assignee_email,
+            assignee_name=assignee_name,
+            assigner_email=assigner_email,
+            assigner_name=assigner_name,
+            created_at=created_at,
+            last_updated_at=last_updated_at,
+            project_id=project_id,
+            source="jira",
+        )
+        
+        result = await process_work_item_ch(
+            work_item_model,
+            session,
+            skip_existing=skip_existing,
+        )
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error processing Jira work item: {e}", exc_info=True)
+        return None

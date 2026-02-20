@@ -121,3 +121,4 @@ class WorkItem(BaseModel):
     created_at: datetime
     last_updated_at: datetime
     project_id: Optional[str] = None  # UUID
+    source: Optional[str] = None  # "plane" or "jira"
