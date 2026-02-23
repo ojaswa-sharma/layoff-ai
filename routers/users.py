@@ -42,6 +42,7 @@ async def list_users(
 @router.get("/list")
 async def list_users_paginated(
     session: Session = Depends(get_ch_session),
+    _session : Session = Depends(get_ch_session, use_cache=False),
     page: int = Query(1, ge=1),
     limit: int = Query(10, ge=1, le=100),
     search : str = Query(None),
@@ -52,7 +53,7 @@ async def list_users_paginated(
     List users with pagination and repository statistics.
     """
     try:
-        result = await list_users_paginated_ch(session, page=page, limit=limit, search=search, order_by=order_by.value, order_dir=order_dir.value)
+        result = await list_users_paginated_ch(session, page=page, limit=limit, search=search, order_by=order_by.value, order_dir=order_dir.value, _session= _session)
         return ORJSONResponse(content = result)
     except Exception as e:
         logger.error(f"Error listing paginated users: {e}")

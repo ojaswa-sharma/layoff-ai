@@ -15,6 +15,7 @@ from sqlalchemy import func, select, literal_column, case
 from datetime import datetime, timezone
 from fastapi.concurrency import run_in_threadpool
 import asyncio
+import orjson
 
 
 logger = logging.getLogger(__name__)
@@ -26,7 +27,7 @@ def _parse_changes_json(changes_str: Optional[str]) -> Dict[str, int]:
         return {"additions": 0, "deletions": 0}
     
     try:
-        changes_dict = json.loads(changes_str)
+        changes_dict = orjson.loads(changes_str)
         return {
             "additions": changes_dict.get("additions", 0) or 0,
             "deletions": changes_dict.get("deletions", 0) or 0,
@@ -159,7 +160,7 @@ def aggregate(session, user_agg):
     
     return session.execute(user_agg).fetchall()
 
-async def list_users_paginated_ch(session, page: int = 1, limit: int = 10, search: str = None, order_by="author", order_dir="ASC"):
+async def list_users_paginated_ch(session, page: int = 1, limit: int = 10, search: str = None, order_by="author", order_dir="ASC", _session = None):
     skip = (page - 1) * limit
 
     VALID_ORDER_BY = {"author", "email", "total_additions", "total_removed", "total_commits", "last_commit"}
@@ -265,7 +266,9 @@ async def list_users_paginated_ch(session, page: int = 1, limit: int = 10, searc
     if search is not None:
         params["search"] = f"(?i){search}"
 
-    count_result = await run_in_threadpool(session.execute, count_query, params)
+    count_result_thread =  run_in_threadpool(session.execute, count_query, params)
+    data_result_thread =  run_in_threadpool(_session.execute, data_query, params)
+    count_result, data_result = await asyncio.gather(count_result_thread, data_result_thread)
     total_items = count_result.fetchone().total_users
 
     if total_items == 0:
@@ -277,7 +280,6 @@ async def list_users_paginated_ch(session, page: int = 1, limit: int = 10, searc
             "data": []
         }
 
-    data_result = await run_in_threadpool(session.execute, data_query, params)
     results = data_result.fetchall()
 
     total_pages = (total_items + limit - 1) // limit
