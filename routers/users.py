@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix='/v1/users',
-    dependencies=[Depends(verify_auth_token)]
+    # dependencies=[Depends(verify_auth_token)]
 )
 
 @router.get("/")

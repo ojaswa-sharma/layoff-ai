@@ -4,6 +4,7 @@ from services.ai_service import summarize_and_upload
 from dependencies.json_encoder import DateTimeEncoder, datetime_decoder
 import json
 import os
+import uvloop
 
 class BackgroundKafkaConsumer:
     def __init__(self):
@@ -18,7 +19,7 @@ class BackgroundKafkaConsumer:
         )
         self._running = False
         self._worker_task = None
-        self._semaphore = asyncio.Semaphore(5)
+        self._semaphore = asyncio.Semaphore(int(os.getenv("SEMAPHORE_SIZE", 5)))
         self._tasks = set()
     
     async def startup(self):
@@ -38,7 +39,7 @@ class BackgroundKafkaConsumer:
             except asyncio.CancelledError:
                 print("[SHUTDOWN] Consumer task shut down successfully")
 
-        while self._semaphore._value < 5:
+        while self._tasks:
             print(f"[WAITING] SHUTDOWN PENDING BECAUSE OF PENDING TASKS : {5-self._semaphore._value}")
             await asyncio.sleep(0.1)
         await self._consumer.stop()

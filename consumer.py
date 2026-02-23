@@ -3,7 +3,7 @@ from services.kafka.background_kafka_consuer import BackgroundKafkaConsumer
 import os
 from dotenv import load_dotenv
 import warnings
-import gc
+import uvloop
 
 warnings.filterwarnings(
     "ignore",
@@ -31,4 +31,4 @@ async def main():
         await consumer.stop()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    uvloop.run(main())
