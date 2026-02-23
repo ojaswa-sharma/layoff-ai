@@ -66,6 +66,45 @@ async def check_commit_exists_ch(
         return False
 
 
+async def get_commit_by_hash_ch(
+    session: Session,
+    commit_hash: str,
+    repo_name: str,
+    installation_id: int,
+) -> Optional[CommitCH]:
+    """
+    Query the commits table in ClickHouse to retrieve a commit by hash.
+    
+    Args:
+        session: SQLAlchemy session
+        commit_hash: Commit hash (12 characters)
+        repo_name: Repository name
+        installation_id: Installation ID
+        
+    Returns:
+        CommitCH record if found, None otherwise
+    """
+    try:
+        # Validate commit_hash is a string
+        if not isinstance(commit_hash, str):
+            logger.error(
+                f"Invalid commit_hash type: expected str, got {type(commit_hash).__name__}. "
+                f"Value: {commit_hash}"
+            )
+            return None
+        
+        commit = session.query(CommitCH).filter(
+            CommitCH.commit_hash == commit_hash,
+            CommitCH.repository_name == repo_name,
+            CommitCH.installation_id == installation_id,
+        ).first()
+        
+        return commit
+    except Exception as e:
+        logger.error(f"Error querying commit by hash {commit_hash}: {e}", exc_info=True)
+        return None
+
+
 async def insert_commit_ch(
     session: Session,
     commit: Commit,
