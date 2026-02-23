@@ -127,6 +127,15 @@ async def handle_pull_request_event(request_data: dict, session: Session):
             "event_type": "pull_request",
             "action": action,
         }
+
+    # Get GitHub credentials for API authentication
+    try:
+        app_id, pem_data = get_github_credentials()
+    except Exception as e:
+        logger.error(f"Failed to get GitHub credentials: {e}")
+        app_id, pem_data = None, None
+
+    print(f"[PR DATA] : {pr_data}")
     
     result = await process_github_pr_merge(
         pr_data=pr_data,
@@ -136,6 +145,8 @@ async def handle_pull_request_event(request_data: dict, session: Session):
         installation_id=installation_id,
         session=session,
         skip_existing=False,  # Use upsert logic
+        app_id=app_id,
+        private_key_pem=pem_data,
     )
     
     if result is None:

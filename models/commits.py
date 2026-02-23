@@ -105,3 +105,20 @@ class CommitDetails(BaseModel):
     )
 
     work_type: WorkType
+
+
+class WorkItem(BaseModel):
+    """Work item from Plane - tracks issues/tickets with metadata"""
+    work_item_id: str  # UUID from Plane
+    workspace_id: str  # UUID
+    title: str
+    description: Optional[str] = None
+    status: str  # from state.name
+    assignee_email: Optional[str] = None  # from assignees[0].email
+    assignee_name: Optional[str] = None  # from assignees[0].display_name
+    assigner_email: Optional[str] = None  # from activity.actor.email (only on updates)
+    assigner_name: Optional[str] = None  # from activity.actor.display_name (only on updates)
+    created_at: datetime
+    last_updated_at: datetime
+    project_id: Optional[str] = None  # UUID
+    source: Optional[str] = None  # "plane" or "jira"
