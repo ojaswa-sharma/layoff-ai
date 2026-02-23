@@ -8,10 +8,16 @@ from services.graphiti.init_client import init_graphiti, get_graphiti
 from dependencies.ch_db import init_ch_engine
 from services.auth.auth_client import init_auth_client, stop_session
 from middlewares.timer import timer_middleware
-
+import concurrent.futures
+import asyncio
 
 async def lifespan(app : FastAPI):
     load_dotenv()
+    loop = asyncio.get_event_loop()
+    loop.set_default_executor(
+        concurrent.futures.ThreadPoolExecutor(max_workers=500)
+    )
+
     print(f"[LIFESPAN] Initializing app")
     init_graphiti()
     init_ch_engine()
