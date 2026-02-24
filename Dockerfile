@@ -15,4 +15,4 @@ COPY . .
 
 EXPOSE 5002
 
-CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "-w", "3", "-b", "0.0.0.0:5002", "main:app"]
+CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "-w", "2", "-b", "0.0.0.0:5002", "main:app"]

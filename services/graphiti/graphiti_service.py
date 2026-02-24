@@ -189,6 +189,9 @@ class Personalizer:
                 elif label_name == "Developer":
                     properties["summary"] = props.get("summary"),
                     properties["developer_work"] = props.get("developer_work")
+                if label_name == "Negatives":
+                    properties["negative_work_summary"] = props.get("negative_work_summary")
+
 
                 nodes.append({
                     "label": label_name,
