@@ -11,6 +11,7 @@ from services.clickhouse_service.ch_ai_service import insert_commit_analysis_ch
 from dependencies.ch_db import get_ch_session_direct
 from datetime import datetime
 from misc.prompts import summarizer_prompt
+from data.project_context import get_project_context
 
 load_dotenv()
 
@@ -28,6 +29,8 @@ def get_openai():
     return _client
 
 async def summarie_diff(openai:AsyncOpenAI, diff_text, name, mail, repo_name, commit_title):
+    project_context = get_project_context(repo_name)
+    print(f"[PROJECT_CONTEXT] Repo: {repo_name} | Context found: {'Yes' if 'No project context' not in project_context else 'No'}")
     user_prompt =f"""
     Summarize this commit, be precise, and calculative. The goal is to determine whether the developer is doing his work properly.
     # Diff text:
@@ -38,6 +41,9 @@ async def summarie_diff(openai:AsyncOpenAI, diff_text, name, mail, repo_name, co
 
     # Repo Name:
     {repo_name}
+
+    # Project Context:
+    {project_context}
     """
     system_prompt = summarizer_prompt
     for _retry in range(int(os.getenv("OPENAI_RETRIES", 30))):
