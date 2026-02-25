@@ -2,7 +2,7 @@ import asyncio
 from aiokafka import AIOKafkaConsumer
 from services.ai_service import summarize_and_upload
 from dependencies.json_encoder import DateTimeEncoder, datetime_decoder
-import json
+import orjson
 import os
 import uvloop
 
@@ -50,7 +50,7 @@ class BackgroundKafkaConsumer:
             async for msg in self._consumer:
                 if not self._running:
                     break
-                commit_json = json.loads(msg.value.decode(), object_hook=datetime_decoder)
+                commit_json = orjson.loads(msg.value.decode(), object_hook=datetime_decoder)
                 await self._semaphore.acquire()
                 task = asyncio.create_task(self._execute(commit_json))
                 self._tasks.add(task)
