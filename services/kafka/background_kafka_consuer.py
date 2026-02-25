@@ -69,17 +69,3 @@ class BackgroundKafkaConsumer:
     
     async def _get_semaphore(self):
         return self._semaphore._value
-
-if __name__ == "__main__":
-    from services.kafka.background_kafka_worker import BackgroundProducer
-    async def test():
-        consumer = BackgroundKafkaConsumer()
-        await consumer.startup()
-        producer = BackgroundProducer()
-        await producer.start()
-        await producer.add_task({"repo": "example", "commit": "abc123"})
-        await asyncio.sleep(2)
-        await consumer.stop()
-        await producer.stop()
-
-    asyncio.run(test())
