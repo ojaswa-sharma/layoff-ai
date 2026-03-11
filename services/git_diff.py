@@ -1,8 +1,10 @@
 import aiohttp
 import jwt
 import time
+from services.auth.bitbucket_oauth import get_access_token
 
 GITHUB_API = "https://api.github.com"
+BITBUCKET_API = "https://api.bitbucket.org/2.0"
 
 def create_app_jwt(app_id: str, private_key_pem: str) -> str:
     now = int(time.time())
@@ -70,7 +72,6 @@ def count_diff_stats(diff_text: str) -> dict:
         if not line:
             continue
 
-        # skip diff metadata
         if (
             line.startswith("+++")
             or line.startswith("---")
@@ -88,3 +89,36 @@ def count_diff_stats(diff_text: str) -> dict:
         "deletions": deletions,
         "changes": additions + deletions,
     }
+
+
+async def fetch_bitbucket_diff(
+    repo_full_name: str,
+    commit_hash: str,
+) -> str:
+    """
+    Fetch diff for a Bitbucket commit using OAuth token.
+    
+    Args:
+        repo_full_name: Repository full name (workspace/repo)
+        commit_hash: Full commit hash
+    
+    Returns:
+        Diff text as string
+    """
+    token = await get_access_token()
+    
+    diff_url = f"{BITBUCKET_API}/repositories/{repo_full_name}/diff/{commit_hash}"
+    
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "text/plain",
+    }
+    
+    async with aiohttp.ClientSession(headers=headers) as session:
+        async with session.get(diff_url) as resp:
+            if resp.status != 200:
+                body = await resp.text()
+                raise RuntimeError(
+                    f"Bitbucket diff fetch failed {resp.status}: {body}"
+                )
+            return await resp.text()

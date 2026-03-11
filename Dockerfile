@@ -9,9 +9,10 @@ ENV PYTHONUNBUFFERED=1 \
 COPY requirements.txt .
 
 RUN pip install -r requirements.txt
+RUN pip install uvloop
 
 COPY . .
 
 EXPOSE 5002
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "5002"]
+CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "-w", "2", "-b", "0.0.0.0:5002", "main:app"]

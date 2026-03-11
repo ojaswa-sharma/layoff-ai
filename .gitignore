@@ -4,3 +4,6 @@ __pycache__
 .venv/
 .env
 *.pem
+clickhouse
+test.py
+result.txt

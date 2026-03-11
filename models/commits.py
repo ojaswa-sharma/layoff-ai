@@ -4,6 +4,27 @@ from enum import Enum
 from datetime import datetime
 
 
+class SyncStatus(str, Enum):
+    """Repository synchronization status"""
+    BACKFILLING = "BACKFILLING"
+    LIVE = "LIVE"
+    FAILED = "FAILED"
+
+
+class Repository(BaseModel):
+    """Repository metadata and sync status tracking"""
+    repository_name: str
+    repository_full_name: str
+    repository_url: str
+    installation_id: int
+    sync_status: SyncStatus = SyncStatus.BACKFILLING
+    backfill_started_at: Optional[datetime] = None
+    backfill_completed_at: Optional[datetime] = None
+    last_commit_processed: Optional[str] = None  # commit SHA
+    total_commits_backfilled: int = 0
+    error_message: Optional[str] = None
+
+
 class Commit(BaseModel):
     commit_hash: str
     message: str
@@ -14,7 +35,8 @@ class Commit(BaseModel):
     repository_url: str
     diff: Optional[str] = None
     installation_id : Optional[int] = None
-    changes : Optional[dict]
+    changes : Optional[dict] = None
+    branch_name: Optional[str] = None
 
 class WorkCategory(Enum):
     real : str = "real"
@@ -33,6 +55,27 @@ class WorkType(Enum):
     functional_bugs : str = "functional_bugs"
     tech_debt : str = "tech_debt"
     other : str = "other"
+
+class PRMerge(BaseModel):
+    """PR event - tracks all PR states (opened, closed, merged) with metadata"""
+    pr_number: int
+    pr_title: str
+    status: str  # "open", "closed", "merged"
+    created_by: str  # PR creator username
+    created_by_email: str  # PR creator email
+    repository_name: str
+    repository_url: str
+    date: datetime  # Created date for opened, merged_at for merged
+    updated_at: datetime  # Last update timestamp
+    installation_id: int
+    source: str  # "github" or "bitbucket"
+    merge_commit_hash: Optional[str] = None  # Only for merged PRs
+    merged_by: Optional[str] = None  # Only for merged PRs
+    merged_by_email: Optional[str] = None  # Only for merged PRs
+    branch: Optional[str] = None  # Source branch name
+    additions: Optional[int] = None  # Lines added
+    deletions: Optional[int] = None  # Lines removed
+
 
 class CommitDetails(BaseModel):
     commit_summary: str = Field(
@@ -62,3 +105,20 @@ class CommitDetails(BaseModel):
     )
 
     work_type: WorkType
+
+
+class WorkItem(BaseModel):
+    """Work item from Plane - tracks issues/tickets with metadata"""
+    work_item_id: str  # UUID from Plane
+    workspace_id: str  # UUID
+    title: str
+    description: Optional[str] = None
+    status: str  # from state.name
+    assignee_email: Optional[str] = None  # from assignees[0].email
+    assignee_name: Optional[str] = None  # from assignees[0].display_name
+    assigner_email: Optional[str] = None  # from activity.actor.email (only on updates)
+    assigner_name: Optional[str] = None  # from activity.actor.display_name (only on updates)
+    created_at: datetime
+    last_updated_at: datetime
+    project_id: Optional[str] = None  # UUID
+    source: Optional[str] = None  # "plane" or "jira"

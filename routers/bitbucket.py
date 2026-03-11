@@ -1,12 +1,340 @@
-from fastapi import APIRouter, Request
+"""
+Bitbucket webhook router handling push events and repository setup.
+
+This router processes:
+- Push events: Real-time commit processing via webhooks
+- Repository setup: Triggers historical backfill when repository is first connected
+"""
+from fastapi import APIRouter, Request, Depends, HTTPException
+import os
+import asyncio
+from sqlalchemy.orm import Session
+from models.commits import SyncStatus
+from services.clickhouse_service.ch_commit_processor import process_bitbucket_commit_from_webhook, check_commit_exists_ch, update_branch_raw_from_commit
+from services.clickhouse_service.ch_pr_merge_processor import process_bitbucket_pr_merge
+from services.clickhouse_service.ch_backfill import get_repository_status_ch, update_repository_status_ch
+from services.tech_stack_service import fetch_bitbucket_tech_stack
+from services.clickhouse_service.ch_tech_stack import insert_or_update_tech_stack_ch
+from dependencies.ch_db import get_ch_session, get_ch_session_direct
+import logging
+from datetime import datetime
+import hashlib
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/bitbucket")
 
+BACKFILL_MAX_COMMITS = int(os.getenv("BACKFILL_MAX_COMMITS", "100"))
+
+
+@router.get('/test-token')
+async def test_token():
+    """Test endpoint to verify Bitbucket OAuth token retrieval."""
+    try:
+        from services.bitbucket_api import fetch_diff
+        diff = await fetch_diff(
+            "https://api.bitbucket.org/2.0/repositories/dpkgusain/test-repo-1/diff/6a9dbe2fba2d5b4cc6339e7a527a214ea9ef2d13..0f7a3c3e6b728df710d97e9073af7f4c206ab5f2"
+        )
+        print(diff)
+
+        return {
+            "success": True,
+            "diff": diff
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_type": type(e).__name__
+        }
+
+
 
 @router.post('/webhook')
-async def hook_bitbucket(
-    request : Request
-):
-    print(await request.json())
+async def webhook_bitbucket(request: Request, session: Session = Depends(get_ch_session)):
+    """
+    Handle Bitbucket webhook events.
+    """
+    try:
+        event_type = request.headers.get("X-Event-Key", "repo:push")
+        print(f"[EVENT] EVENT TYPE : {event_type}")
+        
+        request_data = await request.json()
+        
+        # Handle all PR-related events
+        if event_type in ["pullrequest:created", "pullrequest:updated", "pullrequest:fulfilled", "pullrequest:rejected"]:
+            return await handle_pullrequest_event(request_data, session, event_type)
+        
+        if event_type == "repo:push":
+            # print(f"[REQUEST DATA] PUSH : {request_data}")
+            return await handle_push_event(request_data, session)
+        
+        return {
+            "message": f"Event type '{event_type}' not processed",
+            "event_type": event_type,
+        }
+        
+    except KeyError as e:
+        logger.error(f"Missing required field: {e}")
+        raise HTTPException(status_code=400, detail=f"Missing required field: {str(e)}")
+    except Exception as e:
+        logger.error(f"Error processing webhook: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error processing webhook: {str(e)}")
 
-    print("Webhook received")
+
+async def handle_pullrequest_event(request_data: dict, session: Session, event_type: str):
+    """
+    Handle all Bitbucket pull request webhook events - process all PR states (created, updated, fulfilled, rejected).
+    """
+    repository = request_data.get("repository", {})
+    repo_full_name = repository.get("full_name", "")
+    repo_name = repository.get("name", "")
+    repo_url = repository.get("links", {}).get("html", {}).get("href", "")
+    
+    workspace = repository.get("workspace", {})
+    workspace_slug = workspace.get("slug", "") or workspace.get("uuid", "")
+    
+    if not repo_full_name or not workspace_slug:
+        logger.error("Missing repository or workspace info in PR webhook payload")
+        raise HTTPException(status_code=400, detail="Missing repository or workspace information")
+    
+    workspace_id = int(hashlib.md5(workspace_slug.encode()).hexdigest()[:8], 16)
+    
+    pr_data = request_data.get("pullrequest", {})
+    
+    if not pr_data:
+        logger.warning(f"PR webhook missing pullrequest data for event {event_type}")
+        return {
+            "message": "PR webhook missing pullrequest data",
+            "event_type": event_type,
+        }
+    
+    result = await process_bitbucket_pr_merge(
+        pr_data=pr_data,
+        repo_full_name=repo_full_name,
+        repo_name=repo_name,
+        repo_url=repo_url,
+        workspace_id=workspace_id,
+        session=session,
+        skip_existing=False,  # Use upsert logic
+    )
+    
+    if result is None:
+        return {
+            "message": "PR processing failed",
+            "event_type": event_type,
+            "pr_number": pr_data.get("id"),
+        }
+    
+    return {
+        "message": f"PR {event_type} processed successfully",
+        "event_type": event_type,
+        "pr_number": pr_data.get("id"),
+        "status": result.status,
+    }
+
+
+async def handle_push_event(request_data: dict, session: Session):
+    """
+    Handle push webhook events - process commits in real-time.
+    
+    This maintains similar behavior to GitHub webhook handling:
+    - Idempotency checks
+    - Lazy backfill triggering for repositories not yet synced
+    """
+    try:
+        repository = request_data.get("repository", {})
+        repo_full_name = repository.get("full_name", "")
+        repo_name = repository.get("name", "")
+        repo_url = repository.get("links", {}).get("html", {}).get("href", "")
+        
+        workspace = repository.get("workspace", {})
+        workspace_slug = workspace.get("slug", "") or workspace.get("uuid", "")
+        
+        if not repo_full_name or not workspace_slug:
+            logger.error("Missing repository or workspace info in webhook payload")
+            raise HTTPException(status_code=400, detail="Missing repository or workspace information")
+        
+        workspace_id = int(hashlib.md5(workspace_slug.encode()).hexdigest()[:8], 16)
+        
+        
+        repo_status = await get_repository_status_ch(
+            session,
+            repo_full_name,
+            workspace_id,
+        )
+        
+        current_status = repo_status.get("sync_status") if repo_status else None
+        
+        if current_status != SyncStatus.LIVE.value and current_status != SyncStatus.BACKFILLING.value:
+            if not repo_status or repo_status.get("sync_status") != SyncStatus.BACKFILLING.value:
+                success = await update_repository_status_ch(
+                    session,
+                    repo_full_name,
+                    workspace_id,
+                    {
+                        "repository_name": repo_name,
+                        "sync_status": SyncStatus.BACKFILLING.value,
+                        "backfill_started_at": datetime.utcnow(),
+                        "error_message": None,
+                    },
+                )
+                
+                if success:
+                    logger.info(
+                        f"Lazy backfill triggered for Bitbucket {repo_full_name} "
+                        f"(workspace {workspace_id}) - previous status: {current_status or 'missing'}"
+                    )
+                    
+                    async def run_backfill():
+                        ch_session = get_ch_session_direct()
+                        try:
+                            from services.clickhouse_service.ch_backfill import backfill_repository_ch
+                            await backfill_repository_ch(
+                                repo_full_name=repo_full_name,
+                                repo_name=repo_name,
+                                repo_url=repo_url,
+                                installation_id=workspace_id,
+                                session=ch_session,
+                                source="bitbucket",
+                                max_commits=BACKFILL_MAX_COMMITS,
+                            )
+                        except Exception as e:
+                            logger.error(f"Error in async backfill for Bitbucket {repo_full_name}: {e}", exc_info=True)
+                        finally:
+                            ch_session.close()
+                    
+                    asyncio.create_task(run_backfill())
+            else:
+                logger.debug(
+                    f"Backfill already in progress for Bitbucket {repo_full_name}, skipping trigger"
+                )
+        elif current_status == SyncStatus.BACKFILLING.value:
+            logger.debug(
+                f"Received webhook for Bitbucket {repo_full_name} while backfill in progress. "
+                "Processing commit anyway (idempotency will prevent duplicates)."
+            )
+        
+        processed_count = 0
+        skipped_count = 0
+        
+        push_data = request_data.get("push", {})
+        changes = push_data.get("changes", [])
+        
+        for change in changes:
+            # Extract branch name from change.new.name (Bitbucket format)
+            branch_name = change.get("new", {}).get("name")
+            if not branch_name:
+                # Fallback: try to get from old.name if new doesn't exist
+                branch_name = change.get("old", {}).get("name")
+            
+            commits = change.get("commits", [])
+            
+            for commit in commits:
+
+                full_commit_hash = commit.get("hash", "")
+                if not full_commit_hash:
+                    logger.warning("Commit missing hash field")
+                    return None
+        
+                commit_hash = full_commit_hash[:12]
+                print(f"[COMMIT HASH] =============: {commit_hash}")
+
+                exists = await check_commit_exists_ch(
+                    session,
+                    commit_hash,
+                    repo_name,
+                    workspace_id,
+                )
+                print(f"[EXISTS] =============: {exists}")
+                if exists:
+                    logger.debug(f"Commit {commit_hash} already exists, skipping")
+                    break
+
+                result = await process_bitbucket_commit_from_webhook(
+                    commit_data=commit,
+                    repo_full_name=repo_full_name,
+                    repo_name=repo_name,
+                    repo_url=repo_url,
+                    workspace_id=workspace_id,
+                    session=session,
+                    skip_existing=True,
+                    branch_name=branch_name,
+                )
+                
+                # Update branch_raw table
+                try:
+                    # Extract email from commit author (same pattern as process_bitbucket_commit_from_webhook)
+                    author_info = commit.get("author", {})
+                    author_name = author_info.get("raw", "Unknown")
+                    commit_email = ""
+                    
+                    if " <" in author_name and author_name.endswith(">"):
+                        parts = author_name.rsplit(" <", 1)
+                        commit_email = parts[1].rstrip(">")
+                    
+                    # Extract commit_date from commit data
+                    timestamp_str = commit.get("date")
+                    if timestamp_str:
+                        try:
+                            if timestamp_str.endswith("Z"):
+                                timestamp_str = timestamp_str.replace("Z", "+00:00")
+                            elif "+" not in timestamp_str and "-" not in timestamp_str[-6:]:
+                                timestamp_str = timestamp_str + "+00:00"
+                            commit_date = datetime.fromisoformat(timestamp_str)
+                        except (ValueError, AttributeError):
+                            commit_date = datetime.utcnow()
+                    else:
+                        commit_date = datetime.utcnow()
+                    
+                    # Update branch_raw table
+                    await update_branch_raw_from_commit(
+                        session=session,
+                        email=commit_email,
+                        repository_full_name=repo_full_name,
+                        branch_name=branch_name,
+                        commit_date=commit_date,
+                        installation_id=workspace_id,
+                        commit_hash=commit_hash,
+                    )
+                except Exception as e:
+                    # Log error but don't fail the webhook
+                    logger.warning(f"Failed to update branch_raw for commit {commit_hash}: {e}", exc_info=True)
+                
+                if result is None:
+                    skipped_count += 1
+                else:
+                    processed_count += 1
+        
+        try:
+            tech_stack_data = await fetch_bitbucket_tech_stack(
+                repo_full_name=repo_full_name,
+            )
+            
+            if tech_stack_data:
+                try:
+                    await insert_or_update_tech_stack_ch(
+                        session=session,
+                        repository_full_name=repo_full_name,
+                        repository_name=repo_name,
+                        installation_id=workspace_id,
+                        languages=tech_stack_data.get("languages"),
+                        topics=[],
+                        source=tech_stack_data.get("source", "bitbucket"),
+                    )
+                    logger.info(f"Tech stack updated for {repo_full_name}")
+                except Exception as e:
+                    logger.error(f"Something went wrong while inserting tech stack for {repo_full_name}: {e}", exc_info=True)
+        except Exception as e:
+            logger.warning(f"Failed to fetch/update tech stack for {repo_full_name}: {e}", exc_info=True)
+
+        return {
+            "message": "Webhook processed successfully",
+            "event_type": "repo:push",
+            "processed_commits": processed_count,
+            "skipped_commits": skipped_count,
+        }
+    except Exception as e:
+        print(f"[ERROR] Error while pushing event : {e}")
+    finally:
+        session.close()

@@ -1,139 +1,134 @@
-from pydantic import Field
-from zep_cloud.external_clients.ontology import (
-    EntityModel,
-    EntityText,
-    EntityBoolean,
-    EdgeModel,
-)
+from pydantic import Field, BaseModel
 
 # =========================
 # ENTITY DEFINITIONS
 # =========================
 
-class Repository(EntityModel):
+class Repository(BaseModel):
     """
     Represents a code repository.
     """
-    repo_name: EntityText = Field(
+    repo_name: str = Field(
         description="The name of the repository"
     )
 
 
-class Bug(EntityModel):
+class Bug(BaseModel):
     """
     Represents a bug in a repository.
     """
-    bug_type: EntityText = Field(
+    bug_type: str = Field(
         description="Type of bug: frontend, backend, devops"
     )
-    bug_severity: EntityText = Field(
+    bug_severity: str = Field(
         description="Severity of the bug: LOW, HIGH, CRITICAL"
     )
-    bug_summary: EntityText = Field(
+    bug_summary: str = Field(
         description="Detailed summary of the bug"
     )
-    is_resolved: EntityBoolean = Field(
+    is_resolved: bool = Field(
         description="Whether the bug has been fixed"
     )
 
 
-class Feature(EntityModel):
+class Feature(BaseModel):
     """
     Represents a feature in a repository.
     """
-    feature_name: EntityText = Field(
+    feature_name: str = Field(
         description="Short name of the feature"
     )
-    feature_description: EntityText = Field(
+    feature_description: str = Field(
         description="Detailed description of the feature"
     )
-    is_implemented: EntityBoolean = Field(
+    is_implemented: bool = Field(
         description="Whether the feature has been implemented"
     )
 
 
-class Commit(EntityModel):
+class Commit(BaseModel):
     """
     Represents a commit.
     """
-    commit_title: EntityText = Field(
+    commit_title: str = Field(
         description="The title of the commit"
     )
-    commit_hash: EntityText = Field(
+    commit_hash: str = Field(
         description="The hash of the commit"
     )
-    relevant_work: EntityBoolean = Field(
+    relevant_work: bool = Field(
         description="True if actual work, false if fake/irrelevant"
     )
-    commit_description: EntityText = Field(
+    commit_description: str = Field(
         description="Detailed description of the commit"
     )
 
-class Developer(EntityModel):
+class Developer(BaseModel):
     """
     Represents the developer
     """
-    email : EntityModel = Field(description="The email of the developer")
-    name : EntityModel = Field(description="The name of the developer")
+    developer_email : str = Field(description="The email of the developer")
+    developer_name : str = Field(description="The name of the developer")
+    developer_work : str = Field(description="OVERALL WORK DONE BY THE DEVELOPER ACROSS COMMITS")
     
 
-class Changes(EntityModel):
+class Changes(BaseModel):
     """
     Represents the changes in a commit
     """
-    change_text : EntityText = Field(description="Summary of changes done in a commit")
+    change_text : str = Field(description="Summary of changes done in a commit")
 
-class Positives(EntityModel):
+class Positives(BaseModel):
     """
     Represents the actual good work done by the developer
     """
-    positve_work_summary : EntityText = Field(description="The good work done by the developer")
+    positve_work_summary : str = Field(description="The good work done by the developer")
 
-class Negatives(EntityModel):
+class Negatives(BaseModel):
     """
     Represents the issues or bad coding practices followed by the developer
     """
-    negative_work_summary : EntityText = Field(description="The issues or bad coding practices done by the developer")
+    negative_work_summary : str = Field(description="The issues or bad coding practices done by the developer")
 
 
 # =========================
 # EDGE DEFINITIONS (DATA LIVES HERE)
 # =========================
 
-class RepositoryContainsBug(EdgeModel):
+class RepositoryContainsBug(BaseModel):
     """
     Repo → Bug relationship metadata.
     """
-    discovery_context: EntityText = Field(
+    discovery_context: str = Field(
         description="How the bug was discovered (logs, user report, monitoring, etc.)"
     )
 
 
-class RepositoryContainsFeature(EdgeModel):
+class RepositoryContainsFeature(BaseModel):
     """
     Repo → Feature relationship metadata.
     """
-    priority: EntityText = Field(
+    priority: str = Field(
         description="Feature priority: LOW, MEDIUM, HIGH"
     )
 
 
-class BugAddressedByCommit(EdgeModel):
+class BugAddressedByCommit(BaseModel):
     """
     Bug → Commit relationship metadata.
     """
-    fix_type: EntityText = Field(
+    fix_type: str = Field(
         description="Type of fix: hotfix, patch, refactor"
     )
-    fully_resolves: EntityBoolean = Field(
+    fully_resolves: bool = Field(
         description="Whether this commit fully resolves the bug"
     )
 
 
-class FeatureRealizedByCommit(EdgeModel):
+class FeatureRealizedByCommit(BaseModel):
     """
     Feature → Commit relationship metadata.
     """
-    implementation_stage: EntityText = Field(
+    implementation_stage: str = Field(
         description="Stage: initial, partial, complete"
     )

@@ -6,4 +6,12 @@ aiohttp
 pyjwt
 cryptography
 openai
-zep-cloud
+requests
+graphiti-core[falkordb]
+sqlalchemy
+clickhouse-sqlalchemy
+gunicorn
+aiokafka
+kafka-python
+langfuse
+orjson
